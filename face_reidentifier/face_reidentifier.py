@@ -1,89 +1,8 @@
 import numpy as np
+from .misc import *
 import cv2
-from keras.layers import Flatten, Dense, Input, Activation, Conv2D, MaxPooling2D
 from keras.models import Model
-from keras import backend as K
-from keras.utils import layer_utils
 import scipy.spatial.distance as sd
-
-
-def VggFace_VGG16(weights_path,classes=2622):
-
-    img_input = Input(shape=(224,224,3))
-
-    # Block 1
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_1')(
-        img_input)
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_2')(x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool1')(x)
-
-    # Block 2
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2_1')(
-        x)
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2_2')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool2')(x)
-
-    # Block 3
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_1')(
-        x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_2')(
-        x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool3')(x)
-
-    # Block 4
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_1')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool4')(x)
-
-    # Block 5
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_1')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_2')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool5')(x)
-
-    x = Flatten(name='flatten')(x)
-    x = Dense(4096, name='fc6')(x)
-    x = Activation('relu', name='fc6/relu')(x)
-    x = Dense(4096, name='fc7')(x)
-    x = Activation('relu', name='fc7/relu')(x)
-    x = Dense(classes, name='fc8')(x)
-    x = Activation('softmax', name='fc8/softmax')(x)
-
-    inputs = img_input
-
-    # Create model
-    model = Model(inputs, x, name='vggface_vgg16')
-
-    # if weights_path is not None:
-    model.load_weights(weights_path, by_name=True) # load weights
-
-    if K.backend() == 'theano':
-        layer_utils.convert_all_kernels_in_model(model)
-
-    return model
-
-
-# histogram equalization for a color image
-def hist_eq(img):
-    img_yuv = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
-
-    # equalize the histogram of the Y channel
-    img_yuv[:, :, 0] = cv2.equalizeHist(img_yuv[:, :, 0])
-
-    # convert the YUV image back to RGB format
-    img_hist = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
-
-    return img_hist
 
 
 # crop face with landmarks
@@ -147,7 +66,7 @@ def preprocess_image(img, meanRGB, use_histeq=True, convert_to_RGB=True):
 
 
 
-class FaceReID:
+class FaceReidentifier:
 
     def __init__(self, face_model_path, dist_thred=1.218, use_histeq=True, min_nn=4,
                  db_size1=30, db_size2=20, size_check_time=200, dist_method='euclidean'):
