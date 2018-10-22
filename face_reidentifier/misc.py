@@ -8,7 +8,7 @@ from keras.models import Model
 
 def load_vgg_face_16_model(weights_path, classes=2622):
 
-    img_input = Input(shape=(224,224,3))
+    img_input = Input(shape=(224, 224, 3))
 
     # Block 1
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_1')(
@@ -70,20 +70,6 @@ def load_vgg_face_16_model(weights_path, classes=2622):
         layer_utils.convert_all_kernels_in_model(model)
 
     return model
-
-
-def equalise_histogram(image, use_bgr_colour_model=True):
-    if image.ndim == 3 and image.shape[2] == 3:
-        if use_bgr_colour_model:
-            hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV_FULL)
-            hsv_image[:, :, 0] = cv2.equalizeHist(hsv_image[:, :, 0])
-            return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR_FULL)
-        else:
-            hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV_FULL)
-            hsv_image[:, :, 0] = cv2.equalizeHist(hsv_image[:, :, 0])
-            return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB_FULL)
-    else:
-        return cv2.equalizeHist(image)
 
 
 def get_face_box(landmarks, margin=(0.0, 0.0, 0.0, 0.0), exclude_chin_points=False):
@@ -212,3 +198,17 @@ def extract_face_image(image, landmarks, target_size, margin, head_pose=None,
         face_image = face_image.copy()
 
     return face_image, landmarks, eye_points
+
+
+def equalise_histogram(image, use_bgr_colour_model=True):
+    if image.ndim == 3 and image.shape[2] == 3:
+        if use_bgr_colour_model:
+            hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV_FULL)
+            hsv_image[:, :, 2] = cv2.equalizeHist(hsv_image[:, :, 2])
+            return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR_FULL)
+        else:
+            hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV_FULL)
+            hsv_image[:, :, 2] = cv2.equalizeHist(hsv_image[:, :, 2])
+            return cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB_FULL)
+    else:
+        return cv2.equalizeHist(image)

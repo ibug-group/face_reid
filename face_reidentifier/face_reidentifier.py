@@ -5,7 +5,7 @@ import scipy.spatial.distance as sd
 
 class FaceReidentifier(object):
     def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4,
-                 database_capacity=30, descriptor_list_capacity=20, mean_rgb=[129.1863, 104.7624, 93.5940],
+                 database_capacity=30, descriptor_list_capacity=20, mean_rgb=(129.1863, 104.7624, 93.5940),
                  model=None):
         if model is None:
             model = load_vgg_face_16_model(model_path)
@@ -15,6 +15,7 @@ class FaceReidentifier(object):
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._database_capacity = max(1, int(database_capacity))
         self._descriptor_list_capacity = max(1, int(descriptor_list_capacity))
+        assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
         self._database = []
 
@@ -60,8 +61,20 @@ class FaceReidentifier(object):
         self._descriptor_list_capacity = max(1, int(value))
         self._limit_database_size()
 
+    @property
+    def mean_rgb(self):
+        return self._mean_rgb
+
+    @mean_rgb.setter
+    def mean_rgb(self, value):
+        assert len(value) == 3
+        self._mean_rgb = value
+
     def _limit_database_size(self):
         pass
+
+    def reidentify_faces(self, face_images, use_bgr_colour_model=True):
+        return list(range(1, len(face_images) + 1))
 
     def reset(self):
         pass
