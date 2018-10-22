@@ -71,16 +71,22 @@ def main():
 
         # Import ibug_face_tracker
         tracker_section_name = "ibug_face_tracker.MultiFaceTracker"
-        sys.path.append(os.path.realpath(config.get(tracker_section_name, "repository_path", fallback="")))
+        tracker_repository_path = config.get(tracker_section_name, "repository_path", fallback="").replace(
+            '\'', '').replace('\"', '')
+        if not os.path.isabs(tracker_repository_path):
+            tracker_repository_path = os.path.realpath(os.path.join(os.path.dirname(__file__),
+                                                                    tracker_repository_path))
+        sys.path.append(tracker_repository_path)
         import ibug_face_tracker
 
         # Create the multi-face tracker
-        ert_model_path = config.get(tracker_section_name, "ert_model_path")
-        auxiliary_model_path = config.get(tracker_section_name, "auxiliary_model_path")
+        ert_model_path = config.get(tracker_section_name, "ert_model_path").replace('\'', '').replace('\"', '')
+        auxiliary_model_path = config.get(tracker_section_name, "auxiliary_model_path").replace(
+            '\'', '').replace('\"', '')
         if not os.path.isabs(ert_model_path):
-            ert_model_path = os.path.realpath(os.path.join(os.path.dirname('__file__'), ert_model_path))
+            ert_model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), ert_model_path))
         if not os.path.isabs(auxiliary_model_path):
-            auxiliary_model_path = os.path.realpath(os.path.join(os.path.dirname('__file__'), auxiliary_model_path))
+            auxiliary_model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), auxiliary_model_path))
         faces_to_track = config.getint(tracker_section_name, "faces_to_track", fallback=1)
         print("Creating multi-face tracker with the following parameters...\n"
               "ert_model_path = \"" + ert_model_path + "\"\n"
@@ -138,7 +144,7 @@ def main():
 
         # Create the face reidentifier
         reidentifier_section_name = "face_reidentifier.FaceReidentifier"
-        vgg_model_path = config.get(reidentifier_section_name, "model_path")
+        vgg_model_path = config.get(reidentifier_section_name, "model_path").replace('\'', '').replace('\"', '')
         print("\nCreating face reidentifier with the following parameter...\n"
               "model_path = \"" + vgg_model_path + "\"")
         reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path)
@@ -147,6 +153,7 @@ def main():
         # Configure the reidentifier
         reidentifier.distance_threshold = config.getfloat(reidentifier_section_name, "distance_threshold",
                                                           fallback=reidentifier.distance_threshold)
+        reidentifier.distance_method = config
         reidentifier.neighbour_count_threshold = config.getint(reidentifier_section_name,
                                                                "neighbour_count_threshold",
                                                                fallback=reidentifier.neighbour_count_threshold)
@@ -159,6 +166,10 @@ def main():
         mean_rgb = tuple([float(x) for x in mean_rgb.split(',') if len(x) > 0])
         if len(mean_rgb) == 3:
             reidentifier.mean_rgb = mean_rgb
+        distance_method = config.get(reidentifier_section_name, "distance_method",
+                                     fallback=reidentifier.distance_method)
+        reidentifier.distance_method = distance_method.replace('\'', '').replace(
+            '\"', '').replace(' ', '').replace('\t', '').lower()
         print("\nFace reidentifier configured with the following settings: \n"
               "distance_threshold = %.6f" % reidentifier.distance_threshold + "\n"
               "neighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold + "\n"
@@ -166,12 +177,14 @@ def main():
               "descriptor_list_capacity = %d" % reidentifier.descriptor_list_capacity + "\n"
               "mean_rgb = (%.6f, %.6f, %.6f)" % (reidentifier.mean_rgb[0],
                                                  reidentifier.mean_rgb[1],
-                                                 reidentifier.mean_rgb[2]))
+                                                 reidentifier.mean_rgb[2]) + "\n"
+              "distance_method = %s" % reidentifier.distance_method)
 
         # Load settings for the tracking context
-        face_reidentification_interval = max(1, config.getint(misc_section_name, "face_reidentification_interval",
+        context_section_name = "tracking_context"
+        face_reidentification_interval = max(1, config.getint(context_section_name, "face_reidentification_interval",
                                                               fallback=8))
-        minimum_tracked_frames = max(1, config.getint(misc_section_name, "minimum_tracked_frames", fallback=6))
+        minimum_tracking_length = max(1, config.getint(context_section_name, "minimum_tracking_length", fallback=6))
 
         # Now open the webcam
         webcam_section_name = "cv2.VideoCapture"
@@ -206,9 +219,9 @@ def main():
                     tracking_context[face_id]['tracked'] = False
                 for face in tracked_faces:
                     if face['id'] in tracking_context:
-                        tracking_context[face['id']]['tracked_frames'] += 1
+                        tracking_context[face['id']]['tracking_length'] += 1
                     else:
-                        tracking_context[face['id']] = {'tracked_frames': 1, 'verified_id': 0}
+                        tracking_context[face['id']] = {'tracking_length': 1, 'verified_id': 0}
                     tracking_context[face['id']]['tracked'] = True
                     tracking_context[face['id']]['facial_landmarks'] = face['facial_landmarks']
                     if 'pitch' in face:
@@ -222,7 +235,7 @@ def main():
                 # Re-identify the faces
                 if frame_number % face_reidentification_interval == 0:
                     faces_to_be_identified = [x for x in tracking_context.keys() if
-                                              tracking_context[x]['tracked_frames'] >= minimum_tracked_frames]
+                                              tracking_context[x]['tracking_length'] >= minimum_tracking_length]
                     face_images = [face_reidentifier.extract_face_image(frame,
                                                                         tracking_context[x]['facial_landmarks'],
                                                                         (target_size, target_size), margin,
@@ -233,7 +246,7 @@ def main():
                     verified_face_ids = reidentifier.reidentify_faces(face_images)
                     for idx, face_id in enumerate(faces_to_be_identified):
                         tracking_context[face_id]['verified_id'] = verified_face_ids[idx]
-                identified_faces = [tracking_context[x]['verified_id'] for x in tracking_context]
+                identified_faces = [tracking_context[x['id']]['verified_id'] for x in tracked_faces]
                 identified_faces = [x for x in identified_faces if x > 0]
                 if len(identified_faces) == 0:
                     print("Frame #%d: no face is tracked." % frame_number)

@@ -4,8 +4,8 @@ import scipy.spatial.distance as sd
 
 
 class FaceReidentifier(object):
-    def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4,
-                 database_capacity=30, descriptor_list_capacity=20, mean_rgb=(129.1863, 104.7624, 93.5940),
+    def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4, database_capacity=30,
+                 descriptor_list_capacity=20, mean_rgb=(129.1863, 104.7624, 93.5940), distance_method='euclidean',
                  model=None):
         if model is None:
             model = load_vgg_face_16_model(model_path)
@@ -17,6 +17,7 @@ class FaceReidentifier(object):
         self._descriptor_list_capacity = max(1, int(descriptor_list_capacity))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
+        self._distance_method = distance_method
         self._database = []
 
     @property
@@ -70,14 +71,46 @@ class FaceReidentifier(object):
         assert len(value) == 3
         self._mean_rgb = value
 
+    @property
+    def distance_method(self):
+        return self._distance_method
+
+    @distance_method.setter
+    def distance_method(self, value):
+        self._distance_method = value
+
     def _limit_database_size(self):
         pass
 
+    def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
+        face_images = np.array(face_images).astype(np.float32)
+        for face_image in face_images:
+            if use_bgr_colour_model:
+                face_image[..., 2] -= self._mean_rgb[0]
+                face_image[..., 1] -= self._mean_rgb[1]
+                face_image[..., 0] -= self._mean_rgb[2]
+                face_image[...] = face_image[..., ::-1]
+            else:
+                face_image[..., 0] -= self._mean_rgb[0]
+                face_image[..., 1] -= self._mean_rgb[1]
+                face_image[..., 2] -= self._mean_rgb[2]
+        face_descriptors = self._model.predict(face_images)
+        for face_descriptor in face_descriptors:
+            face_descriptor /= max(np.finfo(np.float32).eps, np.linalg.norm(face_descriptor))
+        return face_descriptors
+
     def reidentify_faces(self, face_images, use_bgr_colour_model=True):
-        return list(range(1, len(face_images) + 1))
+        if len(face_images) > 0:
+            face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
+            print(face_descriptors.shape)
+            return list((range(1, len(face_images) + 1)))
+        else:
+            return []
 
     def reset(self):
-        pass
+        self._database = []
+
+
 
 
 # class FaceReidentifier(object):
