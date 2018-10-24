@@ -5,8 +5,8 @@ import scipy.spatial.distance as sd
 
 class FaceReidentifier(object):
     def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4, database_capacity=30,
-                 descriptor_list_capacity=20, mean_rgb=(129.1863, 104.7624, 93.5940), distance_method='euclidean',
-                 model=None):
+                 descriptor_list_capacity=20, unidentified_descriptor_list_capacity=20,
+                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_method='euclidean', model=None):
         if model is None:
             model = load_vgg_face_16_model(model_path)
             model = Model(model.input, model.get_layer('fc7/relu').output)
@@ -15,10 +15,13 @@ class FaceReidentifier(object):
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._database_capacity = max(1, int(database_capacity))
         self._descriptor_list_capacity = max(1, int(descriptor_list_capacity))
+        self._unidentified_descriptor_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
         self._distance_method = distance_method
-        self._database = []
+        self._database = {}
+        self._face_id_counter = 0
+        self._current_tick = 0
 
     @property
     def model(self):
@@ -63,6 +66,9 @@ class FaceReidentifier(object):
         self._limit_database_size()
 
     @property
+    def unidentified_descriptor
+
+    @property
     def mean_rgb(self):
         return self._mean_rgb
 
@@ -80,7 +86,18 @@ class FaceReidentifier(object):
         self._distance_method = value
 
     def _limit_database_size(self):
-        pass
+        # Enforce database capacity
+        if 0 in self._database:
+            capacity = self._database_capacity + 1
+        else:
+            capacity = self._database_capacity
+        if len(self._database) > capacity:
+            sorted_face_ids = sorted(self._database.keys())
+            update_ticks = [self._database[face_id]['update_tick'] for face_id in sorted_face_ids]
+            if sorted_face_ids[0] == 0:
+                update_ticks[0] = self._current_tick + 1
+            for idx in np.lexsort((sorted_face_ids, update_ticks))[0: len(self._database) - capacity]:
+                del self._database[sorted_face_ids[idx]]
 
     def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
         face_images = np.array(face_images).astype(np.float32)
@@ -100,16 +117,17 @@ class FaceReidentifier(object):
         return face_descriptors
 
     def reidentify_faces(self, face_images, use_bgr_colour_model=True):
+        self._current_tick += 1
         if len(face_images) > 0:
             face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
-            print(face_descriptors.shape)
             return list((range(1, len(face_images) + 1)))
         else:
             return []
 
-    def reset(self):
-        self._database = []
-
+    def reset(self, reset_face_id_counter=True):
+        self._database.clear()
+        if reset_face_id_counter:
+            self._face_id_counter = 0
 
 
 
