@@ -2,10 +2,19 @@ from .misc import *
 from keras.models import Model
 import scipy.spatial.distance as sd
 
+# model_path=./models/rcmalli_vggface_tf_vgg16.h5
+# distance_threshold=1.218
+# neighbour_count_threshold=4
+# database_capacity=30
+# descriptor_list_capacity=30
+# descriptor_update_rate=0.05
+# unidentified_descriptor_list_capacity=20
+# mean_rgb=129.1863,104.7624,93.5940
+# distance_method=euclidean
 
 class FaceReidentifier(object):
     def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4, database_capacity=30,
-                 descriptor_list_capacity=20, unidentified_descriptor_list_capacity=20,
+                 descriptor_list_capacity=20, descriptor_update_rate=0.05, unidentified_descriptor_list_capacity=30,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_method='euclidean', model=None):
         if model is None:
             model = load_vgg_face_16_model(model_path)
@@ -15,13 +24,14 @@ class FaceReidentifier(object):
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._database_capacity = max(1, int(database_capacity))
         self._descriptor_list_capacity = max(1, int(descriptor_list_capacity))
-        self._unidentified_descriptor_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
+        self._descriptor_update_rate = max(0.0, min(descriptor_update_rate, 1.0))
+        self._unidentified_face_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
         self._distance_method = distance_method
-        self._database = {}
+        self._database = []
+        self._unidentified_descriptors = []
         self._face_id_counter = 0
-        self._current_tick = 0
 
     @property
     def model(self):
@@ -63,10 +73,26 @@ class FaceReidentifier(object):
     @descriptor_list_capacity.setter
     def descriptor_list_capacity(self, value):
         self._descriptor_list_capacity = max(1, int(value))
-        self._limit_database_size()
+        for face_id in self._database.keys():
+            if len(self._database[face_id]['descriptors']) > self._descriptor_list_capacity:
+                self._database[face_id]['descriptors'] = self._database[face_id]['descriptors'][
+                    len(self._database[face_id]['descriptors']) - self._descriptor_list_capacity:]
 
     @property
-    def unidentified_descriptor
+    def descriptor_update_rate(self):
+        return self._descriptor_update_rate
+
+    @descriptor_update_rate.setter
+    def descriptor_update_rate(self, value):
+        self._descriptor_update_rate = max(0.0, min(value, 1.0))
+
+    @property
+    def unidentified_descriptor_list_capacity(self):
+        return self._unidentified_face_list_capacity
+
+    @unidentified_descriptor_list_capacity.setter
+    def unidentified_descriptor_list_capacity(self, value):
+        self._unidentified_face_list_capacity = max(1, int(value))
 
     @property
     def mean_rgb(self):
@@ -87,16 +113,12 @@ class FaceReidentifier(object):
 
     def _limit_database_size(self):
         # Enforce database capacity
-        if 0 in self._database:
-            capacity = self._database_capacity + 1
-        else:
-            capacity = self._database_capacity
-        if len(self._database) > capacity:
+        if len(self._database) > self._database_capacity:
             sorted_face_ids = sorted(self._database.keys())
             update_ticks = [self._database[face_id]['update_tick'] for face_id in sorted_face_ids]
             if sorted_face_ids[0] == 0:
                 update_ticks[0] = self._current_tick + 1
-            for idx in np.lexsort((sorted_face_ids, update_ticks))[0: len(self._database) - capacity]:
+            for idx in np.lexsort((sorted_face_ids, update_ticks))[0: len(self._database) - _database_capacity]:
                 del self._database[sorted_face_ids[idx]]
 
     def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
@@ -124,8 +146,13 @@ class FaceReidentifier(object):
         else:
             return []
 
-    def reset(self, reset_face_id_counter=True):
+    def delete_unidentified_descriptors(self):
+        self._unidentified_descriptors.clear()
+
+    def reset(self, delete_unidentified_descriptors=True, reset_face_id_counter=True):
         self._database.clear()
+        if delete_unidentified_descriptors:
+            self.delete_unidentified_descriptors()
         if reset_face_id_counter:
             self._face_id_counter = 0
 
