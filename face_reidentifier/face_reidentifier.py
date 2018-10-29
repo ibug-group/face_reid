@@ -25,7 +25,7 @@ class FaceReidentifier(object):
         self._database_capacity = max(1, int(database_capacity))
         self._descriptor_list_capacity = max(1, int(descriptor_list_capacity))
         self._descriptor_update_rate = max(0.0, min(descriptor_update_rate, 1.0))
-        self._unidentified_face_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
+        self._unidentified_descriptor_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
         self._distance_method = distance_method
@@ -64,7 +64,8 @@ class FaceReidentifier(object):
     @database_capacity.setter
     def database_capacity(self, value):
         self._database_capacity = max(1, int(value))
-        self._limit_database_size()
+        if len(self._database) > self._database_capacity:
+            self._database = self._database[len(self._database) - self._database_capacity:]
 
     @property
     def descriptor_list_capacity(self):
@@ -73,10 +74,10 @@ class FaceReidentifier(object):
     @descriptor_list_capacity.setter
     def descriptor_list_capacity(self, value):
         self._descriptor_list_capacity = max(1, int(value))
-        for face_id in self._database.keys():
-            if len(self._database[face_id]['descriptors']) > self._descriptor_list_capacity:
-                self._database[face_id]['descriptors'] = self._database[face_id]['descriptors'][
-                    len(self._database[face_id]['descriptors']) - self._descriptor_list_capacity:]
+        for face in self._database:
+            if len(face['descriptors']) > self._descriptor_list_capacity:
+                face['descriptors'] = face['descriptors'][len(face['descriptors']) -
+                                                          self._descriptor_list_capacity:]
 
     @property
     def descriptor_update_rate(self):
@@ -88,11 +89,15 @@ class FaceReidentifier(object):
 
     @property
     def unidentified_descriptor_list_capacity(self):
-        return self._unidentified_face_list_capacity
+        return self._unidentified_descriptor_list_capacity
 
     @unidentified_descriptor_list_capacity.setter
     def unidentified_descriptor_list_capacity(self, value):
-        self._unidentified_face_list_capacity = max(1, int(value))
+        self._unidentified_descriptor_list_capacity = max(1, int(value))
+        if len(self._unidentified_descriptors) > self._unidentified_descriptor_list_capacity:
+            self._unidentified_descriptors = \
+                self._unidentified_descriptors[len(self._unidentified_descriptors) -
+                                               self._unidentified_descriptor_list_capacity:]
 
     @property
     def mean_rgb(self):
@@ -110,16 +115,6 @@ class FaceReidentifier(object):
     @distance_method.setter
     def distance_method(self, value):
         self._distance_method = value
-
-    def _limit_database_size(self):
-        # Enforce database capacity
-        if len(self._database) > self._database_capacity:
-            sorted_face_ids = sorted(self._database.keys())
-            update_ticks = [self._database[face_id]['update_tick'] for face_id in sorted_face_ids]
-            if sorted_face_ids[0] == 0:
-                update_ticks[0] = self._current_tick + 1
-            for idx in np.lexsort((sorted_face_ids, update_ticks))[0: len(self._database) - _database_capacity]:
-                del self._database[sorted_face_ids[idx]]
 
     def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
         face_images = np.array(face_images).astype(np.float32)
@@ -139,7 +134,6 @@ class FaceReidentifier(object):
         return face_descriptors
 
     def reidentify_faces(self, face_images, use_bgr_colour_model=True):
-        self._current_tick += 1
         if len(face_images) > 0:
             face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
             return list((range(1, len(face_images) + 1)))

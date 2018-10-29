@@ -46,7 +46,7 @@ def load_keras_w_tensorflow(cuda_devices=[], video_memory_utilisation=1.0):
 
 
 def main():
-    script_name = os.path.splitext(os.path.basename('__file__'))[0]
+    script_name = os.path.splitext(os.path.basename(__file__))[0]
     if len(sys.argv) < 2:
         print("Correct usage: " + script_name + ".py [webcam_index] [config_file=" + script_name + ".ini]")
     else:
