@@ -153,7 +153,6 @@ def main():
         # Configure the reidentifier
         reidentifier.distance_threshold = config.getfloat(reidentifier_section_name, "distance_threshold",
                                                           fallback=reidentifier.distance_threshold)
-        reidentifier.distance_method = config
         reidentifier.neighbour_count_threshold = config.getint(reidentifier_section_name,
                                                                "neighbour_count_threshold",
                                                                fallback=reidentifier.neighbour_count_threshold)
@@ -161,24 +160,31 @@ def main():
                                                        fallback=reidentifier.database_capacity)
         reidentifier.descriptor_list_capacity = config.getint(reidentifier_section_name, "descriptor_list_capacity",
                                                               fallback=reidentifier.descriptor_list_capacity)
+        reidentifier.descriptor_update_rate = config.getfloat(reidentifier_section_name, "descriptor_update_rate",
+                                                              fallback=reidentifier.descriptor_update_rate)
+        reidentifier.unidentified_descriptor_list_capacity = config.getint(
+            reidentifier_section_name, "unidentified_descriptor_list_capacity",
+            fallback=reidentifier.unidentified_descriptor_list_capacity)
         mean_rgb = config.get(reidentifier_section_name, "mean_rgb", fallback="").replace(
             '\'', '').replace('\"', '').replace(' ', '').replace('\t', '')
         mean_rgb = tuple([float(x) for x in mean_rgb.split(',') if len(x) > 0])
         if len(mean_rgb) == 3:
             reidentifier.mean_rgb = mean_rgb
-        distance_method = config.get(reidentifier_section_name, "distance_method",
-                                     fallback=reidentifier.distance_method)
-        reidentifier.distance_method = distance_method.replace('\'', '').replace(
+        distance_metric = config.get(reidentifier_section_name, "distance_metric",
+                                     fallback=reidentifier.distance_metric)
+        reidentifier.distance_metric = distance_metric.replace('\'', '').replace(
             '\"', '').replace(' ', '').replace('\t', '').lower()
         print("\nFace reidentifier configured with the following settings: \n"
               "distance_threshold = %.6f" % reidentifier.distance_threshold + "\n"
               "neighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold + "\n"
               "database_capacity = %d" % reidentifier.database_capacity + "\n"
               "descriptor_list_capacity = %d" % reidentifier.descriptor_list_capacity + "\n"
+              "descriptor_update_rate = %.6f" % reidentifier.descriptor_update_rate + "\n"
+              "unidentified_descriptor_list_capacity = %d" % reidentifier.unidentified_descriptor_list_capacity + "\n"
               "mean_rgb = (%.6f, %.6f, %.6f)" % (reidentifier.mean_rgb[0],
                                                  reidentifier.mean_rgb[1],
                                                  reidentifier.mean_rgb[2]) + "\n"
-              "distance_method = %s" % reidentifier.distance_method)
+              "distance_metric = %s" % reidentifier.distance_metric)
 
         # Load settings for the tracking context
         context_section_name = "tracking_context"
@@ -228,7 +234,7 @@ def main():
                         tracking_context[face['id']]['head_pose'] = (face['pitch'], face['yaw'], face['roll'])
                     else:
                         tracking_context[face['id']]['head_pose'] = None
-                for face_id in tracking_context.keys():
+                for face_id in list(tracking_context.keys()):
                     if not tracking_context[face_id]['tracked']:
                         del tracking_context[face_id]
 
@@ -239,7 +245,8 @@ def main():
                     face_images = [face_reidentifier.extract_face_image(frame,
                                                                         tracking_context[x]['facial_landmarks'],
                                                                         (target_size, target_size), margin,
-                                                                        tracking_context[x]['head_pose'])[0]
+                                                                        tracking_context[x]['head_pose'],
+                                                                        exclude_chin_points=exclude_chin_points)[0]
                                    for x in faces_to_be_identified]
                     if equalise_histogram:
                         face_images = [face_reidentifier.equalise_histogram(x) for x in face_images]

@@ -2,20 +2,11 @@ from .misc import *
 from keras.models import Model
 import scipy.spatial.distance as sd
 
-# model_path=./models/rcmalli_vggface_tf_vgg16.h5
-# distance_threshold=1.218
-# neighbour_count_threshold=4
-# database_capacity=30
-# descriptor_list_capacity=30
-# descriptor_update_rate=0.05
-# unidentified_descriptor_list_capacity=20
-# mean_rgb=129.1863,104.7624,93.5940
-# distance_method=euclidean
 
 class FaceReidentifier(object):
     def __init__(self, model_path='', distance_threshold=1.218, neighbour_count_threshold=4, database_capacity=30,
                  descriptor_list_capacity=20, descriptor_update_rate=0.05, unidentified_descriptor_list_capacity=30,
-                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_method='euclidean', model=None):
+                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None):
         if model is None:
             model = load_vgg_face_16_model(model_path)
             model = Model(model.input, model.get_layer('fc7/relu').output)
@@ -28,7 +19,7 @@ class FaceReidentifier(object):
         self._unidentified_descriptor_list_capacity = max(1, int(unidentified_descriptor_list_capacity))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
-        self._distance_method = distance_method
+        self._distance_metric = distance_metric
         self._database = []
         self._unidentified_descriptors = []
         self._face_id_counter = 0
@@ -64,8 +55,7 @@ class FaceReidentifier(object):
     @database_capacity.setter
     def database_capacity(self, value):
         self._database_capacity = max(1, int(value))
-        if len(self._database) > self._database_capacity:
-            self._database = self._database[len(self._database) - self._database_capacity:]
+        self._limit_database_size()
 
     @property
     def descriptor_list_capacity(self):
@@ -74,10 +64,7 @@ class FaceReidentifier(object):
     @descriptor_list_capacity.setter
     def descriptor_list_capacity(self, value):
         self._descriptor_list_capacity = max(1, int(value))
-        for face in self._database:
-            if len(face['descriptors']) > self._descriptor_list_capacity:
-                face['descriptors'] = face['descriptors'][len(face['descriptors']) -
-                                                          self._descriptor_list_capacity:]
+        self._limit_database_size()
 
     @property
     def descriptor_update_rate(self):
@@ -94,10 +81,7 @@ class FaceReidentifier(object):
     @unidentified_descriptor_list_capacity.setter
     def unidentified_descriptor_list_capacity(self, value):
         self._unidentified_descriptor_list_capacity = max(1, int(value))
-        if len(self._unidentified_descriptors) > self._unidentified_descriptor_list_capacity:
-            self._unidentified_descriptors = \
-                self._unidentified_descriptors[len(self._unidentified_descriptors) -
-                                               self._unidentified_descriptor_list_capacity:]
+        self._limit_database_size()
 
     @property
     def mean_rgb(self):
@@ -109,12 +93,24 @@ class FaceReidentifier(object):
         self._mean_rgb = value
 
     @property
-    def distance_method(self):
-        return self._distance_method
+    def distance_metric(self):
+        return self._distance_metric
 
-    @distance_method.setter
-    def distance_method(self, value):
-        self._distance_method = value
+    @distance_metric.setter
+    def distance_metric(self, value):
+        self._distance_metric = value
+
+    def _limit_database_size(self):
+        if len(self._unidentified_descriptors) > self._unidentified_descriptor_list_capacity:
+            self._unidentified_descriptors = \
+                self._unidentified_descriptors[len(self._unidentified_descriptors) -
+                                               self._unidentified_descriptor_list_capacity:]
+        if len(self._database) > self._database_capacity:
+            self._database = self._database[len(self._database) - self._database_capacity:]
+        for face in self._database:
+            if len(face['descriptors']) > self._descriptor_list_capacity:
+                face['descriptors'] = face['descriptors'][len(face['descriptors']) -
+                                                          self._descriptor_list_capacity:]
 
     def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
         face_images = np.array(face_images).astype(np.float32)
@@ -135,8 +131,33 @@ class FaceReidentifier(object):
 
     def reidentify_faces(self, face_images, use_bgr_colour_model=True):
         if len(face_images) > 0:
+            face_ids = [0] * len(face_images)
+
+            # Calculate face
             face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
-            return list((range(1, len(face_images) + 1)))
+
+            # Prepare the data structure for distance calculation
+            archived_face_descriptors = self._unidentified_descriptors
+            archived_face_ids = [0] * len(self._unidentified_descriptors)
+            for face in self._database:
+                archived_face_descriptors += face['descriptors']
+                archived_face_ids += [face['id']] * len(face['descriptors'])
+
+            # Only continue if the archive is not empty
+            if len(archived_face_descriptors) > 0:
+                distances = sd.cdist(face_descriptors, archived_face_descriptors, self._distance_metric)
+                for idx, descriptor in enumerate(face_descriptors):
+                    neighbours = np.where(distances[idx, :] <= self._distance_threshold)
+                    if len(neighbours) < self._neighbour_count_threshold:
+                        # Not enough neighbours
+                        pass
+                    else:
+                        pass
+            else:
+                self._unidentified_descriptors = face_descriptors
+
+            self._limit_database_size()
+            return face_ids
         else:
             return []
 
@@ -346,4 +367,4 @@ class FaceReidentifier(object):
 #             col = self.cols[np.mod(ID, len(self.cols))]
 #             cv2.rectangle(frame,(rect[0],rect[1]),(rect[2],rect[3]),col,2)
 #             cv2.putText(frame,str(ID),(int(0.5*(rect[0]+rect[2])-14),int(rect[1]-10)),1,4,col,2)
-        return frame
+#         return frame
