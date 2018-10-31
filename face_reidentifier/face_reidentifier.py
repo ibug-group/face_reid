@@ -1,6 +1,7 @@
 from .misc import *
 from keras.models import Model
 import scipy.spatial.distance as sd
+from sklearn.cluster import DBSCAN
 
 
 class FaceReidentifier(object):
@@ -126,35 +127,91 @@ class FaceReidentifier(object):
                 face_image[..., 2] -= self._mean_rgb[2]
         face_descriptors = self._model.predict(face_images)
         for face_descriptor in face_descriptors:
-            face_descriptor /= max(np.finfo(np.float32).eps, np.linalg.norm(face_descriptor))
-        return face_descriptors
+            face_descriptor /= max(np.finfo(np.float).eps, np.linalg.norm(face_descriptor))
+        return face_descriptors.tolist()
 
     def reidentify_faces(self, face_images, use_bgr_colour_model=True):
         if len(face_images) > 0:
             face_ids = [0] * len(face_images)
 
-            # Calculate face
+            # Calculate face descriptors
             face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
 
-            # Prepare the data structure for distance calculation
-            archived_face_descriptors = self._unidentified_descriptors
-            archived_face_ids = [0] * len(self._unidentified_descriptors)
-            for face in self._database:
-                archived_face_descriptors += face['descriptors']
-                archived_face_ids += [face['id']] * len(face['descriptors'])
-
             # Only continue if the archive is not empty
-            if len(archived_face_descriptors) > 0:
-                distances = sd.cdist(face_descriptors, archived_face_descriptors, self._distance_metric)
-                for idx, descriptor in enumerate(face_descriptors):
-                    neighbours = np.where(distances[idx, :] <= self._distance_threshold)
-                    if len(neighbours) < self._neighbour_count_threshold:
-                        # Not enough neighbours
-                        pass
-                    else:
-                        pass
+            if len(self._database) > 0 or len(self._unidentified_descriptors) > 0:
+                # First, try to associate current descriptors to existing identities
+                if len(self._database) > 0:
+                    archived_face_descriptors = []
+                    archived_face_indices = []
+                    for idx, face in enumerate(self._database):
+                        archived_face_descriptors += face['descriptors']
+                        archived_face_indices += [idx] * len(face['descriptors'])
+                    distances = sd.cdist(face_descriptors, archived_face_descriptors, self._distance_metric)
+                    max_distance = np.amax(distances)
+
+                    # Calculate similarities between descriptors and existing identities
+                    similarities = np.zeros((len(face_descriptors), len(self._database)), dtype=np.float)
+                    for idx, descriptor in enumerate(face_descriptors):
+                        neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
+                        if len(neighbours) >= self._neighbour_count_threshold:
+                            neighbour_face_indices = [archived_face_indices[x] for x in neighbours]
+                            unique_neighbour_face_indices, counts = \
+                                np.unique(neighbour_face_indices, return_counts=True)
+
+                # Then, try to find new identifies
+                unassigned_descriptor_indices = [x for x in range(len(face_descriptors)) if face_ids[x] == 0]
+                if len(unassigned_descriptor_indices) > 0 and len(self._unidentified_descriptors) > 0:
+                    for idx in unassigned_descriptor_indices:
+                        descriptors = self._unidentified_descriptors + [face_descriptors[idx]]
+                        labels = DBSCAN(eps=self._distance_threshold, min_samples=self._neighbour_count_threshold + 1,
+                                        metric=self._distance_metric).fit(descriptors).labels_
+                        if labels[-1] >= 0:
+                            # New identify found!
+                            self._face_id_counter += 1
+                            new_identity = {'id': self._face_id_counter,
+                                            'descriptors': [self._unidentified_descriptors[x] for x in
+                                                            range(len(self._unidentified_descriptors)) if
+                                                            labels[x] == labels[-1]]}
+                            for idx2 in reversed(range(len(self._unidentified_descriptors))):
+                                if labels[idx2] == labels[-1]:
+                                    del self._unidentified_descriptors[idx2]
+                            self._database.append(new_identity)
+                            face_ids[idx] = new_identity['id']
+
+                # Add the left-overs to the unidentified descriptor list
+                self._unidentified_descriptors += [face_descriptors[x] for x in
+                                                   range(len(face_descriptors)) if face_ids[x] == 0]
             else:
                 self._unidentified_descriptors = face_descriptors
+
+            # Prepare the data structure for distance calculation
+            # archived_face_descriptors = self._unidentified_descriptors
+            # archived_face_indices = [-1] * len(self._unidentified_descriptors)
+            # for idx, face in enumerate(self._database):
+            #     archived_face_descriptors += face['descriptors']
+            #     archived_face_indices += [idx] * len(face['descriptors'])
+            #
+            # # Only continue if the archive is not empty
+            # if len(archived_face_descriptors) > 0:
+            #     unidentified_faces = []n
+            #     distances = sd.cdist(face_descriptors, archived_face_descriptors, self._distance_metric)
+            #     for idx, descriptor in enumerate(face_descriptors):
+            #         neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
+            #         if len(neighbours) < self._neighbour_count_threshold:
+            #             # Not enough neighbours
+            #             unidentified_faces.append(descriptor)
+            #         else:
+            #             neighbour_face_indices = archived_face_indices[neighbours]
+            #             unique_neighbour_face_indices, density = \
+            #                 np.unique(neighbour_face_indices, return_counts=True)
+            #
+            #             pass
+            #     print(distances)
+            #
+            #     # Append the unidentified descriptors
+            #     self._unidentified_descriptors += unidentified_faces
+            # else:
+            #     self._unidentified_descriptors = face_descriptors
 
             self._limit_database_size()
             return face_ids
