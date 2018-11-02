@@ -156,15 +156,14 @@ def main():
         reidentifier.neighbour_count_threshold = config.getint(reidentifier_section_name,
                                                                "neighbour_count_threshold",
                                                                fallback=reidentifier.neighbour_count_threshold)
+        reidentifier.quality_threshold = config.getfloat(reidentifier_section_name, "quality_threshold",
+                                                         fallback=reidentifier.quality_threshold)
         reidentifier.database_capacity = config.getint(reidentifier_section_name, "database_capacity",
                                                        fallback=reidentifier.database_capacity)
         reidentifier.descriptor_list_capacity = config.getint(reidentifier_section_name, "descriptor_list_capacity",
                                                               fallback=reidentifier.descriptor_list_capacity)
         reidentifier.descriptor_update_rate = config.getfloat(reidentifier_section_name, "descriptor_update_rate",
                                                               fallback=reidentifier.descriptor_update_rate)
-        reidentifier.unidentified_descriptor_list_capacity = config.getint(
-            reidentifier_section_name, "unidentified_descriptor_list_capacity",
-            fallback=reidentifier.unidentified_descriptor_list_capacity)
         mean_rgb = config.get(reidentifier_section_name, "mean_rgb", fallback="").replace(
             '\'', '').replace('\"', '').replace(' ', '').replace('\t', '')
         mean_rgb = tuple([float(x) for x in mean_rgb.split(',') if len(x) > 0])
@@ -177,10 +176,10 @@ def main():
         print("\nFace reidentifier configured with the following settings: \n"
               "distance_threshold = %.6f" % reidentifier.distance_threshold + "\n"
               "neighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold + "\n"
+              "quality_threshold = %.6f" % reidentifier.quality_threshold + "\n"
               "database_capacity = %d" % reidentifier.database_capacity + "\n"
               "descriptor_list_capacity = %d" % reidentifier.descriptor_list_capacity + "\n"
               "descriptor_update_rate = %.6f" % reidentifier.descriptor_update_rate + "\n"
-              "unidentified_descriptor_list_capacity = %d" % reidentifier.unidentified_descriptor_list_capacity + "\n"
               "mean_rgb = (%.6f, %.6f, %.6f)" % (reidentifier.mean_rgb[0],
                                                  reidentifier.mean_rgb[1],
                                                  reidentifier.mean_rgb[2]) + "\n"
@@ -234,6 +233,8 @@ def main():
                         tracking_context[face['id']]['head_pose'] = (face['pitch'], face['yaw'], face['roll'])
                     else:
                         tracking_context[face['id']]['head_pose'] = None
+                    if 'most_recent_fitting_scores' in face:
+                        tracking_context[face['id']]['quality'] = np.max(face['most_recent_fitting_scores'])
                 for face_id in list(tracking_context.keys()):
                     if not tracking_context[face_id]['tracked']:
                         del tracking_context[face_id]
@@ -248,9 +249,13 @@ def main():
                                                                         tracking_context[x]['head_pose'],
                                                                         exclude_chin_points=exclude_chin_points)[0]
                                    for x in faces_to_be_identified]
+                    if len(faces_to_be_identified) > 0 and 'quality' in tracking_context[faces_to_be_identified[0]]:
+                        qualities = [tracking_context[x]['quality'] for x in faces_to_be_identified]
+                    else:
+                        qualities = None
                     if equalise_histogram:
                         face_images = [face_reidentifier.equalise_histogram(x) for x in face_images]
-                    verified_face_ids = reidentifier.reidentify_faces(face_images)
+                    verified_face_ids = reidentifier.reidentify_faces(face_images, faces_to_be_identified, qualities)
                     for idx, face_id in enumerate(faces_to_be_identified):
                         tracking_context[face_id]['verified_id'] = verified_face_ids[idx]
                 identified_faces = [tracking_context[x['id']]['verified_id'] for x in tracked_faces]
