@@ -185,7 +185,7 @@ class FaceReidentifier(object):
             # Update conflict list
             sorted_unique_tracklet_ids = sorted(list(self._exisiting_tracklet_ids))
             for idx, tracklet_id1 in enumerate(sorted_unique_tracklet_ids):
-                for tracklet_id2 in enumerate(sorted_unique_tracklet_ids[idx + 1:]):
+                for tracklet_id2 in sorted_unique_tracklet_ids[idx + 1:]:
                     conflict = [tracklet_id1, tracklet_id2]
                     if conflict not in self._conflicts:
                         self._conflicts.append(conflict)
@@ -234,18 +234,55 @@ class FaceReidentifier(object):
                 max_distance = np.amax(distances)
 
                 # Now compute similarities between new descriptors and existing identities
-                similiarities = np.ones((len(remaining_face_descriptors), len(self._database)), dtype=np.float)
-                # for idx, descriptor in enumerate(face_descriptors):
-                #     neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
-                #     if len(neighbours) >= self._neighbour_count_threshold:
-                #         neighbour_face_indices, counts = np.unique(
-                #             [archived_face_indices[x] for x in neighbours], return_counts=True)
-                #         for idx2 in range(len(neighbour_face_indices)):
-                #             similarities[idx, neighbour_face_indices[idx2]] = \
-                #                 (counts[idx2] * 2 + 1) * max_distance - np.min(
-                #                     [distances[idx, x2] for x2 in [x for x in neighbours if
-                #                                                    archived_face_indices[x] ==
-                #                                                    neighbour_face_indices[idx2]]])
+                similarities = -np.ones((len(remaining_face_descriptors), len(self._database)), dtype=np.float)
+                for idx, descriptor in enumerate(remaining_face_descriptors):
+                    neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
+                    if len(neighbours) >= self._neighbour_count_threshold:
+                        neighbour_face_ids, counts = np.unique([saved_face_ids[x] for x in neighbours],
+                                                               return_counts=True)
+                        for idx2 in range(len(neighbour_face_ids)):
+                            saved_face_id = neighbour_face_ids[idx2]
+                            saved_face_idx = self._database.keys().index(saved_face_id)
+                            similarities[idx, saved_face_idx] = \
+                                (counts[idx2] * 2 + 1) * max_distance - np.min(
+                                    [distances[idx, x2] for x2 in [x for x in neighbours if
+                                                                   saved_face_ids[x] == saved_face_id]])
+
+                # Enforce the constraints
+                updated_unidentified_tracklets = {}
+                for idx in range(len(updated_unidentified_tracklet_ids)):
+                    updated_unidentified_tracklets[updated_unidentified_tracklet_ids[idx]] = idx
+                saved_tracklets = {}
+                for idx, face_id in enumerate(self._database.keys()):
+                    for tracklet_id in self._database[face_id]['tracklet_ids']:
+                        saved_tracklets[tracklet_id] = idx
+                for conflict in self._conflicts:
+                    if conflict[0] in updated_unidentified_tracklets and conflict[1] in saved_tracklets:
+                        similarities[updated_unidentified_tracklets[conflict[0]],
+                                     saved_tracklets[conflict[1]]] = -1.0
+                    if conflict[1] in updated_unidentified_tracklets and conflict[0] in saved_tracklets:
+                        similarities[updated_unidentified_tracklets[conflict[1]],
+                                     saved_tracklets[conflict[0]]] = -1.0
+
+                # Assign descriptors to existing identities
+                similarities[similarities < 0.0] *= (len(face_descriptors) * len(self._database) *
+                                                     np.amax(similarities)) ** 2
+                rows, cols = linear_sum_assignment(-similarities)
+                associations = []
+                for [idx1, idx2] in np.vstack((rows, cols)).T:
+                    if similarities[idx1, idx2] > 0.0:
+                        face_id = self._database.keys()[idx2]
+                        tracklet_id = updated_unidentified_tracklet_ids[idx1]
+                        associations.append((face_id, tracklet_id))
+                        face_ids[remaining_face_indices[idx1]] = face_id
+                for association in associations:
+                    face_id = association[0]
+                    tracklet_id = association[1]
+                    updated_identity = self._database[face_id]
+                    self._update_identity(updated_identity, self._unidentified_tracklets[tracklet_id], tracklet_id)
+                    del self._database[face_id]
+                    self._database[face_id] = updated_identity
+                    del self._unidentified_tracklets[tracklet_id]
 
             # Finally, see if new identities have emerged
             remaining_face_indices = [x for x in range(len(tracklet_ids)) if face_ids[x] == 0]

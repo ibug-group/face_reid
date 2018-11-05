@@ -234,7 +234,13 @@ def main():
                     else:
                         tracking_context[face['id']]['head_pose'] = None
                     if 'most_recent_fitting_scores' in face:
-                        tracking_context[face['id']]['quality'] = np.max(face['most_recent_fitting_scores'])
+                        if (face['facial_landmarks'][:, 0].min() <= 0.0 or
+                                face['facial_landmarks'][:, 1].min() <= 0.0 or
+                                face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
+                                face['facial_landmarks'][:, 1].max() >= frame.shape[0]):
+                            tracking_context[face['id']]['quality'] = reidentifier.quality_threshold - 1.0
+                        else:
+                            tracking_context[face['id']]['quality'] = np.max(face['most_recent_fitting_scores'])
                 for face_id in list(tracking_context.keys()):
                     if not tracking_context[face_id]['tracked']:
                         del tracking_context[face_id]
