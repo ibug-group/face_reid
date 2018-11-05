@@ -2,15 +2,14 @@ from .misc import *
 from keras.models import Model
 import scipy.spatial.distance as sd
 from collections import OrderedDict
-from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
 
 
 class FaceReidentifier(object):
-    def __init__(self, model_path='', distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
+    def __init__(self, model_path="", distance_threshold=1.218, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None):
-        if model is None:
+        if len(model_path) > 0:
             model = load_vgg_face_16_model(model_path)
             model = Model(model.input, model.get_layer('fc7/relu').output)
         self._model = model
@@ -108,7 +107,7 @@ class FaceReidentifier(object):
         self._database.clear()
         self._unidentified_tracklets.clear()
         self._exisiting_tracklet_ids.clear()
-        self._conflicts.clear()
+        del self._conflicts[:]
         if reset_face_id_counter:
             self._face_id_counter = 0
 
@@ -129,10 +128,13 @@ class FaceReidentifier(object):
             for face_id in list(self._database.keys())[0: len(self._database) - self._database_capacity]:
                 del self._database[face_id]
 
-        # Finally, remove the irrelevant ids from saved identities
+        # Finally, for each saved identity, remove the irrelevant tracklet ids and trim the descriptor list
         relevant_tracklet_ids = self._exisiting_tracklet_ids.union(np.array(self._conflicts).flatten())
         for face_id in self._database.keys():
             self._database[face_id]['tracklet_ids'].intersection_update(relevant_tracklet_ids)
+            if len(self._database[face_id]['descriptors']) > self._descriptor_list_capacity:
+                del self._database[face_id]['descriptors'][
+                    0: len(self._database[face_id]['descriptors']) - self._descriptor_list_capacity]
 
     def _compute_face_descriptors(self, face_images, use_bgr_colour_model=True):
         face_images = np.array(face_images).astype(np.float32)
@@ -292,84 +294,12 @@ class FaceReidentifier(object):
                     if len(self._unidentified_tracklets[tracklet_id]) >= self._neighbour_count_threshold:
                         self._face_id_counter += 1
                         face_ids[idx] = self._face_id_counter
-                        self._database[face_ids[idx]] = {'descriptors': self._unidentified_tracklets[tracklet_id],
-                                                         'tracklet_ids': set([tracklet_id])}
+                        self._database[face_ids[idx]] = {'descriptors': [], 'tracklet_ids': set()}
+                        self._update_identity(self._database[face_ids[idx]],
+                                              self._unidentified_tracklets[tracklet_id], tracklet_id)
                         del self._unidentified_tracklets[tracklet_id]
 
             self._clean_database()
             return face_ids
-
-            # # Calculate face descriptors
-            # face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
-            #
-            # # Only continue if the archive is not empty
-            # if len(self._database) > 0 or len(self._unidentified_descriptors) > 0:
-            #     # First, try to associate current descriptors to existing identities
-            #     if len(self._database) > 0:
-            #         archived_face_descriptors = []
-            #         archived_face_indices = []
-            #         for idx, face in enumerate(self._database):
-            #             archived_face_descriptors += face['descriptors']
-            #             archived_face_indices += [idx] * len(face['descriptors'])
-            #         distances = sd.cdist(face_descriptors, archived_face_descriptors, self._distance_metric)
-            #         max_distance = np.amax(distances)
-            #
-            #         # Calculate similarities between descriptors and existing identities
-            #         similarities = -np.ones((len(face_descriptors), len(self._database)), dtype=np.float)
-            #         for idx, descriptor in enumerate(face_descriptors):
-            #             neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
-            #             if len(neighbours) >= self._neighbour_count_threshold:
-            #                 neighbour_face_indices, counts = np.unique(
-            #                     [archived_face_indices[x] for x in neighbours], return_counts=True)
-            #                 for idx2 in range(len(neighbour_face_indices)):
-            #                     similarities[idx, neighbour_face_indices[idx2]] = \
-            #                         (counts[idx2] * 2 + 1) * max_distance - np.min(
-            #                             [distances[idx, x2] for x2 in [x for x in neighbours if
-            #                                                            archived_face_indices[x] ==
-            #                                                            neighbour_face_indices[idx2]]])
-            #
-            #         # Assign descriptors to existing identities
-            #         similarities[similarities < 0.0] *= (len(face_descriptors) * len(self._database) *
-            #                                              np.amax(similarities)) ** 2
-            #         rows, cols = linear_sum_assignment(-similarities)
-            #         for [idx1, idx2] in np.vstack((rows, cols)).T:
-            #             if similarities[idx1, idx2] > 0.0:
-            #                 if len(self._database[idx2]['descriptors']) < self._descriptor_list_capacity:
-            #                     self._database[idx2]['descriptors'].append(face_descriptors[idx1])
-            #                 else:
-            #                     to_be_updated = np.argmin(sd.cdist([face_descriptors[idx1]],
-            #                                                        self._database[idx2]['descriptors'])[0])
-            #                     new_descriptor = (face_descriptors[idx1] * self._descriptor_update_rate +
-            #                                       self._database[idx2]['descriptors'][to_be_updated] *
-            #                                       (1.0 - self._descriptor_update_rate))
-            #                     del self._database[idx2]['descriptors'][to_be_updated]
-            #                     self._database[idx2]['descriptors'].append(new_descriptor)
-            #                 face_ids[idx1] = self._database[idx2]['id']
-            #
-            #     # Then, try to find new identifies
-            #     unassigned_descriptor_indices = [x for x in range(len(face_descriptors)) if face_ids[x] == 0]
-            #     if len(unassigned_descriptor_indices) > 0 and len(self._unidentified_descriptors) > 0:
-            #         for idx in unassigned_descriptor_indices:
-            #             descriptors = self._unidentified_descriptors + [face_descriptors[idx]]
-            #             labels = DBSCAN(eps=self._distance_threshold, min_samples=self._neighbour_count_threshold + 1,
-            #                             metric=self._distance_metric).fit(descriptors).labels_
-            #             if labels[-1] >= 0:
-            #                 # New identify found!
-            #                 self._face_id_counter += 1
-            #                 new_identity = {'id': self._face_id_counter,
-            #                                 'descriptors': [self._unidentified_descriptors[x] for x in
-            #                                                 range(len(self._unidentified_descriptors)) if
-            #                                                 labels[x] == labels[-1]]}
-            #                 for idx2 in reversed(range(len(self._unidentified_descriptors))):
-            #                     if labels[idx2] == labels[-1]:
-            #                         del self._unidentified_descriptors[idx2]
-            #                 self._database.append(new_identity)
-            #                 face_ids[idx] = new_identity['id']
-            #
-            #     # Add the left-overs to the unidentified descriptor list
-            #     self._unidentified_descriptors += [face_descriptors[x] for x in
-            #                                        range(len(face_descriptors)) if face_ids[x] == 0]
-            # else:
-            #     self._unidentified_descriptors = face_descriptors
         else:
             return []

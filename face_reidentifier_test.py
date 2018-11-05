@@ -206,82 +206,82 @@ def main():
             return
 
         # Start tracking!
-        frame_number = 1
+        frame_number = 0
         tracking_context = {}
         colours = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255), (255, 0, 255), (255, 255, 0),
                    (0, 128, 255), (128, 255, 0), (255, 0, 128), (128, 0, 255), (0, 255, 128), (255, 128, 0)]
         unidentified_face_colours = [(128, 128, 128), (192, 192, 192)]
-        print("\nFace tracking started, you may press \'Q\' to stop...")
+        print("\nFace tracking started, you may press \'Q\' to stop or \'R\' to reset...")
         while True:
             ret, frame = webcam.read()
             if ret:
                 # Track the frame
                 tracker.track(frame)
-                tracked_faces = tracker.current_result
+                tracklets = tracker.current_result
 
                 # Update tracking context
-                for face_id in tracking_context.keys():
-                    tracking_context[face_id]['tracked'] = False
-                for face in tracked_faces:
-                    if face['id'] in tracking_context:
-                        tracking_context[face['id']]['tracking_length'] += 1
+                for tracklet_id in tracking_context.keys():
+                    tracking_context[tracklet_id]['tracked'] = False
+                for face in tracklets:
+                    tracklet_id = face['id']
+                    if tracklet_id in tracking_context:
+                        tracking_context[tracklet_id]['tracking_length'] += 1
                     else:
-                        tracking_context[face['id']] = {'tracking_length': 1, 'verified_id': 0}
-                    tracking_context[face['id']]['tracked'] = True
-                    tracking_context[face['id']]['facial_landmarks'] = face['facial_landmarks']
+                        tracking_context[tracklet_id] = {'tracking_length': 1, 'face_id': 0}
+                    tracking_context[tracklet_id]['tracked'] = True
+                    tracking_context[tracklet_id]['facial_landmarks'] = face['facial_landmarks']
                     if 'pitch' in face:
-                        tracking_context[face['id']]['head_pose'] = (face['pitch'], face['yaw'], face['roll'])
+                        tracking_context[tracklet_id]['head_pose'] = (face['pitch'], face['yaw'], face['roll'])
                     else:
-                        tracking_context[face['id']]['head_pose'] = None
-                    if 'most_recent_fitting_scores' in face:
-                        if (face['facial_landmarks'][:, 0].min() <= 0.0 or
-                                face['facial_landmarks'][:, 1].min() <= 0.0 or
-                                face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
-                                face['facial_landmarks'][:, 1].max() >= frame.shape[0]):
-                            tracking_context[face['id']]['quality'] = reidentifier.quality_threshold - 1.0
-                        else:
-                            tracking_context[face['id']]['quality'] = np.max(face['most_recent_fitting_scores'])
-                for face_id in list(tracking_context.keys()):
-                    if not tracking_context[face_id]['tracked']:
-                        del tracking_context[face_id]
+                        tracking_context[tracklet_id]['head_pose'] = None
+                    if (face['facial_landmarks'][:, 0].min() <= 0.0 or
+                            face['facial_landmarks'][:, 1].min() <= 0.0 or
+                            face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
+                            face['facial_landmarks'][:, 1].max() >= frame.shape[0]):
+                        tracking_context[tracklet_id]['quality'] = reidentifier.quality_threshold - 1.0
+                    elif 'most_recent_fitting_scores' in face:
+                        tracking_context[tracklet_id]['quality'] = np.max(face['most_recent_fitting_scores'])
+                    else:
+                        tracking_context[tracklet_id]['quality'] = reidentifier.quality_threshold
+                for tracklet_id in list(tracking_context.keys()):
+                    if not tracking_context[tracklet_id]['tracked']:
+                        del tracking_context[tracklet_id]
 
                 # Re-identify the faces
+                frame_number += + 1
                 if frame_number % face_reidentification_interval == 0:
-                    faces_to_be_identified = [x for x in tracking_context.keys() if
-                                              tracking_context[x]['tracking_length'] >= minimum_tracking_length]
+                    tracklet_ids_to_be_identified = [x for x in tracking_context.keys() if
+                                                     tracking_context[x]['tracking_length'] >=
+                                                     minimum_tracking_length]
                     face_images = [face_reidentifier.extract_face_image(frame,
                                                                         tracking_context[x]['facial_landmarks'],
                                                                         (target_size, target_size), margin,
                                                                         tracking_context[x]['head_pose'],
                                                                         exclude_chin_points=exclude_chin_points)[0]
-                                   for x in faces_to_be_identified]
-                    if len(faces_to_be_identified) > 0 and 'quality' in tracking_context[faces_to_be_identified[0]]:
-                        qualities = [tracking_context[x]['quality'] for x in faces_to_be_identified]
-                    else:
-                        qualities = None
+                                   for x in tracklet_ids_to_be_identified]
+                    qualities = [tracking_context[x]['quality'] for x in tracklet_ids_to_be_identified]
                     if equalise_histogram:
                         face_images = [face_reidentifier.equalise_histogram(x) for x in face_images]
-                    verified_face_ids = reidentifier.reidentify_faces(face_images, faces_to_be_identified, qualities)
-                    for idx, face_id in enumerate(faces_to_be_identified):
-                        tracking_context[face_id]['verified_id'] = verified_face_ids[idx]
-                identified_faces = [tracking_context[x['id']]['verified_id'] for x in tracked_faces]
-                identified_faces = [x for x in identified_faces if x > 0]
-                if len(identified_faces) == 0:
+                    face_ids = reidentifier.reidentify_faces(face_images, tracklet_ids_to_be_identified, qualities)
+                    for idx, tracklet_id in enumerate(tracklet_ids_to_be_identified):
+                        tracking_context[tracklet_id]['face_id'] = face_ids[idx]
+                tracked_faces = sorted([tracking_context[x]['face_id'] for x in tracking_context.keys() if
+                                        tracking_context[x]['face_id'] > 0])
+                if len(tracked_faces) == 0:
                     print("Frame #%d: no face is tracked." % frame_number)
-                elif len(identified_faces) == 1:
-                    print("Frame #%d: face #%d is tracked." % (frame_number, identified_faces[0]))
+                elif len(tracked_faces) == 1:
+                    print("Frame #%d: face #%d is tracked." % (frame_number, tracked_faces[0]))
                 else:
-                    print("Frame #%d: face #%d" % (frame_number, identified_faces[0]) +
-                          ", #".join([str(face_id) for face_id in identified_faces[1:-2]]) +
-                          " and #%d" % identified_faces[-1] + " are tracked.")
-                frame_number = frame_number + 1
+                    print("Frame #%d: face #" % frame_number +
+                          ", #".join([str(face_id) for face_id in tracked_faces[0:-1]]) +
+                          " and #%d" % tracked_faces[-1] + " are tracked.")
 
                 # Plot the tracked faces
-                for face in tracked_faces:
-                    verified_id = tracking_context[face['id']]['verified_id']
-                    if verified_id > 0:
-                        colour = colours[(verified_id - 1) % len(colours)]
-                        next_colour = colours[verified_id % len(colours)]
+                for face in tracklets:
+                    face_id = tracking_context[face['id']]['face_id']
+                    if face_id > 0:
+                        colour = colours[(face_id - 1) % len(colours)]
+                        next_colour = colours[face_id % len(colours)]
                         ibug_face_tracker.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
                                                                                 colour=next_colour)
                         ibug_face_tracker.FaceTracker.plot_facial_landmarks(frame, face['facial_landmarks'],
@@ -295,7 +295,7 @@ def main():
                             cv2.putText(frame, "Pose: [%.1f, %.1f, %.1f]" % (face['pitch'], face['yaw'], face['roll']),
                                         text_origin, cv2.FONT_HERSHEY_DUPLEX, 0.4, next_colour, lineType=cv2.LINE_AA)
                         text_origin = tuple(np.floor(np.min(face['facial_landmarks'], axis=0) + [2, -12]).astype(int))
-                        cv2.putText(frame, "Face #%d" % verified_id, text_origin, cv2.FONT_HERSHEY_DUPLEX,
+                        cv2.putText(frame, "Face #%d" % face_id, text_origin, cv2.FONT_HERSHEY_DUPLEX,
                                     0.6, next_colour, lineType=cv2.LINE_AA)
                     else:
                         ibug_face_tracker.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
@@ -312,6 +312,10 @@ def main():
                 if key == ord('q') or key == ord('Q'):
                     print("\'Q\' pressed, we are done here.")
                     break
+                elif key == ord('r') or key == ord('R'):
+                    print("\'R\' pressed, reset everything.")
+                    reidentifier.reset()
+                    tracker.reset()
             else:
                 print("Failed to grab a new frame, we are done here.")
                 break
