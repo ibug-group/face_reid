@@ -168,7 +168,8 @@ class FaceReidentifier(object):
                 distances = sd.cdist([face_descriptor], identity['descriptors'],
                                      metric=self._distance_metric)[0]
                 closest = np.argmin(distances)
-                if distances[closest] <= self._distance_threshold:
+                if (distances[closest] <= self._distance_threshold and
+                        (distances <= self._distance_threshold).sum() >= self._neighbour_count_threshold):
                     updated_descriptor = (face_descriptor * self._descriptor_update_rate +
                                           identity['descriptors'][closest] * (1.0 - self._descriptor_update_rate))
                     del identity['descriptors'][closest]

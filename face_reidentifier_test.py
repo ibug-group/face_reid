@@ -211,6 +211,9 @@ def main():
         colours = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255), (255, 0, 255), (255, 255, 0),
                    (0, 128, 255), (128, 255, 0), (255, 0, 128), (128, 0, 255), (0, 255, 128), (255, 128, 0)]
         unidentified_face_colours = [(128, 128, 128), (192, 192, 192)]
+        minimum_good_face_size = tracker.minimum_face_size / max(np.finfo(np.float).eps,
+                                                                 margin[0] + 1.0 + margin[2],
+                                                                 margin[1] + 1.0 + margin[3])
         print("\nFace tracking started, you may press \'Q\' to stop or \'R\' to reset...")
         while True:
             ret, frame = webcam.read()
@@ -237,7 +240,10 @@ def main():
                     if (face['facial_landmarks'][:, 0].min() <= 0.0 or
                             face['facial_landmarks'][:, 1].min() <= 0.0 or
                             face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
-                            face['facial_landmarks'][:, 1].max() >= frame.shape[0]):
+                            face['facial_landmarks'][:, 1].max() >= frame.shape[0] or
+                            max(face['facial_landmarks'][:, 0].max() - face['facial_landmarks'][:, 0].min(),
+                                face['facial_landmarks'][:, 1].max() - face['facial_landmarks'][:, 1].min()) <
+                            minimum_good_face_size):
                         tracking_context[tracklet_id]['quality'] = reidentifier.quality_threshold - 1.0
                     elif 'most_recent_fitting_scores' in face:
                         tracking_context[tracklet_id]['quality'] = np.max(face['most_recent_fitting_scores'])
