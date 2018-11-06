@@ -244,7 +244,7 @@ class FaceReidentifier(object):
                                                                return_counts=True)
                         for idx2 in range(len(neighbour_face_ids)):
                             saved_face_id = neighbour_face_ids[idx2]
-                            saved_face_idx = self._database.keys().index(saved_face_id)
+                            saved_face_idx = list(self._database.keys()).index(saved_face_id)
                             similarities[idx, saved_face_idx] = \
                                 (counts[idx2] * 2 + 1) * max_distance - np.min(
                                     [distances[idx, x2] for x2 in [x for x in neighbours if
@@ -271,9 +271,10 @@ class FaceReidentifier(object):
                                                      np.amax(similarities)) ** 2
                 rows, cols = linear_sum_assignment(-similarities)
                 associations = []
+                saved_face_ids = list(self._database.keys())
                 for [idx1, idx2] in np.vstack((rows, cols)).T:
                     if similarities[idx1, idx2] > 0.0:
-                        face_id = self._database.keys()[idx2]
+                        face_id = saved_face_ids[idx2]
                         tracklet_id = updated_unidentified_tracklet_ids[idx1]
                         associations.append((face_id, tracklet_id))
                         face_ids[remaining_face_indices[idx1]] = face_id
