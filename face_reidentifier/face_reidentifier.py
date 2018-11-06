@@ -6,7 +6,7 @@ from scipy.optimize import linear_sum_assignment
 
 
 class FaceReidentifier(object):
-    def __init__(self, model_path="", distance_threshold=1.218, neighbour_count_threshold=4, quality_threshold=1.0,
+    def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None):
         if len(model_path) > 0:
@@ -51,6 +51,7 @@ class FaceReidentifier(object):
     @neighbour_count_threshold.setter
     def neighbour_count_threshold(self, value):
         self._neighbour_count_threshold = max(1, int(value))
+        self._clean_database()
 
     @property
     def quality_threshold(self):
@@ -117,6 +118,12 @@ class FaceReidentifier(object):
             if tracklet_id not in self._exisiting_tracklet_ids:
                 del self._unidentified_tracklets[tracklet_id]
 
+        # Then, for each unidentified tracklet, limit the number of saved descriptors
+        for tracklet_id in self._unidentified_tracklets.keys():
+            if len(self._unidentified_tracklets[tracklet_id]) > self._neighbour_count_threshold:
+                del self._unidentified_tracklets[tracklet_id][
+                    0: len(self._unidentified_tracklets[tracklet_id]) - self._neighbour_count_threshold]
+
         # Next, remove the conflicts that are no longer relevant
         for idx in reversed(range(len(self._conflicts))):
             if (self._conflicts[idx][0] not in self._exisiting_tracklet_ids and
@@ -170,16 +177,23 @@ class FaceReidentifier(object):
                     del identity['descriptors'][0]
                     identity['descriptors'].append(face_descriptor)
         identity['tracklet_ids'].add(tracklet_id)
+        return identity
 
     def reidentify_faces(self, face_images, tracklet_ids, qualities=None, use_bgr_colour_model=True):
         assert len(face_images) == len(tracklet_ids)
-        if len(face_images) > 0:
+        number_of_faces = len(face_images)
+        if number_of_faces > 0:
             face_ids = [0] * len(face_images)
-            if qualities is None or len(qualities) != len(face_images):
+            if qualities is None:
                 qualities = [self._quality_threshold] * len(face_images)
+            if len(qualities) < number_of_faces:
+                qualities += [self._quality_threshold] * (number_of_faces - len(qualities))
+            elif len(qualities) > number_of_faces:
+                del qualities[number_of_faces:]
 
             # These are what we see now
             self._exisiting_tracklet_ids = set(tracklet_ids)
+            assert len(self._exisiting_tracklet_ids) == number_of_faces
 
             # Calculate face descriptors
             face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
@@ -193,20 +207,20 @@ class FaceReidentifier(object):
                         self._conflicts.append(conflict)
 
             # See if some of the faces are already tracked
-            for idx in range(len(tracklet_ids)):
+            for idx in range(number_of_faces):
                 saved_face_ids = list(self._database.keys())
                 for saved_face_id in saved_face_ids:
                     if tracklet_ids[idx] in self._database[saved_face_id]['tracklet_ids']:
                         face_ids[idx] = saved_face_id
-                        updated_identity = self._database[saved_face_id]
                         if qualities[idx] >= self._quality_threshold:
-                            self._update_identity(updated_identity, [face_descriptors[idx]], face_ids[idx])
-                        del self._database[saved_face_id]
-                        self._database[saved_face_id] = updated_identity
+                            self._database[saved_face_id] = self._update_identity(
+                                self._database.pop(saved_face_id), [face_descriptors[idx]], tracklet_ids[idx])
+                        else:
+                            self._database[saved_face_id] = self._database.pop(saved_face_id)
                         break
 
-            # For the remaining faces, add them as unidentified tracklets
-            remaining_face_indices = [x for x in range(len(tracklet_ids)) if face_ids[x] == 0]
+            # For the remaining faces, add them as unidentified tracklets for now
+            remaining_face_indices = [x for x in range(number_of_faces) if face_ids[x] == 0]
             for idx in remaining_face_indices:
                 tracklet_id = tracklet_ids[idx]
                 if qualities[idx] >= self._quality_threshold:
@@ -227,35 +241,36 @@ class FaceReidentifier(object):
                                               updated_unidentified_tracklet_ids]
 
                 # Compute distances between new and saved descriptors
+                saved_face_ids = list(self._database.keys())
                 saved_face_descriptors = []
-                saved_face_ids = []
-                for saved_face_id in self._database.keys():
+                saved_face_id_list = []
+                for saved_face_id in saved_face_ids:
                     saved_face_descriptors += self._database[saved_face_id]['descriptors']
-                    saved_face_ids += [saved_face_id] * len(self._database[saved_face_id]['descriptors'])
+                    saved_face_id_list += [saved_face_id] * len(self._database[saved_face_id]['descriptors'])
                 distances = sd.cdist(remaining_face_descriptors, saved_face_descriptors, metric=self.distance_metric)
                 max_distance = np.amax(distances)
 
                 # Now compute similarities between new descriptors and existing identities
-                similarities = -np.ones((len(remaining_face_descriptors), len(self._database)), dtype=np.float)
+                similarities = -np.ones((len(remaining_face_descriptors), len(saved_face_ids)), dtype=np.float)
                 for idx, descriptor in enumerate(remaining_face_descriptors):
                     neighbours = np.where(distances[idx, :] <= self._distance_threshold)[0]
                     if len(neighbours) >= self._neighbour_count_threshold:
-                        neighbour_face_ids, counts = np.unique([saved_face_ids[x] for x in neighbours],
+                        neighbour_face_ids, counts = np.unique([saved_face_id_list[x] for x in neighbours],
                                                                return_counts=True)
                         for idx2 in range(len(neighbour_face_ids)):
                             saved_face_id = neighbour_face_ids[idx2]
-                            saved_face_idx = list(self._database.keys()).index(saved_face_id)
+                            saved_face_idx = saved_face_ids.index(saved_face_id)
                             similarities[idx, saved_face_idx] = \
                                 (counts[idx2] * 2 + 1) * max_distance - np.min(
                                     [distances[idx, x2] for x2 in [x for x in neighbours if
-                                                                   saved_face_ids[x] == saved_face_id]])
+                                                                   saved_face_id_list[x] == saved_face_id]])
 
                 # Enforce the constraints
                 updated_unidentified_tracklets = {}
                 for idx in range(len(updated_unidentified_tracklet_ids)):
                     updated_unidentified_tracklets[updated_unidentified_tracklet_ids[idx]] = idx
                 saved_tracklets = {}
-                for idx, face_id in enumerate(self._database.keys()):
+                for idx, face_id in enumerate(saved_face_ids):
                     for tracklet_id in self._database[face_id]['tracklet_ids']:
                         saved_tracklets[tracklet_id] = idx
                 for conflict in self._conflicts:
@@ -267,38 +282,35 @@ class FaceReidentifier(object):
                                      saved_tracklets[conflict[0]]] = -1.0
 
                 # Assign descriptors to existing identities
-                similarities[similarities < 0.0] *= (len(face_descriptors) * len(self._database) *
+                similarities[similarities < 0.0] *= (similarities.shape[0] * similarities.shape[1] *
                                                      np.amax(similarities)) ** 2
                 rows, cols = linear_sum_assignment(-similarities)
                 associations = []
-                saved_face_ids = list(self._database.keys())
                 for [idx1, idx2] in np.vstack((rows, cols)).T:
                     if similarities[idx1, idx2] > 0.0:
-                        face_id = saved_face_ids[idx2]
                         tracklet_id = updated_unidentified_tracklet_ids[idx1]
-                        associations.append((face_id, tracklet_id))
+                        face_id = saved_face_ids[idx2]
+                        associations.append((tracklet_id, face_id))
                         face_ids[remaining_face_indices[idx1]] = face_id
                 for association in associations:
-                    face_id = association[0]
-                    tracklet_id = association[1]
-                    updated_identity = self._database[face_id]
-                    self._update_identity(updated_identity, self._unidentified_tracklets[tracklet_id], tracklet_id)
-                    del self._database[face_id]
-                    self._database[face_id] = updated_identity
+                    tracklet_id = association[0]
+                    face_id = association[1]
+                    self._database[face_id] = self._update_identity(self._database.pop(face_id),
+                                                                    self._unidentified_tracklets[tracklet_id],
+                                                                    tracklet_id)
                     del self._unidentified_tracklets[tracklet_id]
 
             # Finally, see if new identities have emerged
-            remaining_face_indices = [x for x in range(len(tracklet_ids)) if face_ids[x] == 0]
-            if len(remaining_face_indices) > 0:
-                for idx in remaining_face_indices:
-                    tracklet_id = tracklet_ids[idx]
-                    if len(self._unidentified_tracklets[tracklet_id]) >= self._neighbour_count_threshold:
-                        self._face_id_counter += 1
-                        face_ids[idx] = self._face_id_counter
-                        self._database[face_ids[idx]] = {'descriptors': [], 'tracklet_ids': set()}
-                        self._update_identity(self._database[face_ids[idx]],
-                                              self._unidentified_tracklets[tracklet_id], tracklet_id)
-                        del self._unidentified_tracklets[tracklet_id]
+            remaining_face_indices = [x for x in range(number_of_faces) if face_ids[x] == 0]
+            for idx in remaining_face_indices:
+                tracklet_id = tracklet_ids[idx]
+                if len(self._unidentified_tracklets[tracklet_id]) >= self._neighbour_count_threshold:
+                    self._face_id_counter += 1
+                    face_ids[idx] = self._face_id_counter
+                    self._database[face_ids[idx]] = self._update_identity({'descriptors': [], 'tracklet_ids': set()},
+                                                                          self._unidentified_tracklets[tracklet_id],
+                                                                          tracklet_id)
+                    del self._unidentified_tracklets[tracklet_id]
 
             self._clean_database()
             return face_ids
