@@ -3,46 +3,11 @@ import cv2
 import sys
 import math
 import numpy as np
+import face_reidentifier
 try:
     from configparser import ConfigParser
 except ImportError:
     from ConfigParser import ConfigParser
-try:
-    from StringIO import StringIO
-except ImportError:
-    from io import StringIO
-
-
-def load_keras_w_tensorflow(cuda_devices=[], video_memory_utilisation=1.0):
-    os.environ['KERAS_BACKEND'] = "tensorflow"
-    os.environ['CUDA_DEVICE_ORDER'] = "PCI_BUS_ID"
-    if len(cuda_devices) == 0:
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = "3"
-        original_stderr = sys.stderr
-        sys.stderr = StringIO()
-        try:
-            os.environ['CUDA_VISIBLE_DEVICES'] = "-1"
-            import keras
-        except:
-            os.environ['CUDA_VISIBLE_DEVICES'] = ""
-            import keras
-        sys.stderr.close()
-        sys.stderr = original_stderr
-    else:
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
-        os.environ['CUDA_VISIBLE_DEVICES'] = ",".join(["%d" % x for x in cuda_devices])
-        import tensorflow as tf
-        tf_config = tf.ConfigProto()
-        tf_config.gpu_options.per_process_gpu_memory_fraction = max(0.0, min(video_memory_utilisation, 1.0))
-        tf_config.gpu_options.allow_growth = True
-        session = tf.Session(config=tf_config)
-        original_stderr = sys.stderr
-        sys.stderr = StringIO()
-        import keras
-        sys.stderr.close()
-        sys.stderr = original_stderr
-        keras.backend.get_session().close()
-        keras.backend.set_session(session)
 
 
 def main():
@@ -59,15 +24,6 @@ def main():
         # Parse the INI file
         config = ConfigParser()
         config.read(config_file)
-
-        # Load keras with tensorflow
-        misc_section_name = "misc"
-        cuda_devices = config.get(misc_section_name, "cuda_visible_devices", fallback="").replace(
-            '\'', '').replace('\"', '').replace(' ', '').replace('\t', '')
-        cuda_devices = [int(x) for x in cuda_devices.split(',') if len(x) > 0]
-        load_keras_w_tensorflow(cuda_devices, config.getfloat(misc_section_name,
-                                                              "video_memory_utilisation",
-                                                              fallback=1.0))
 
         # Import ibug_face_tracker
         tracker_section_name = "ibug_face_tracker.MultiFaceTracker"
@@ -138,9 +94,6 @@ def main():
         exclude_chin_points = config.getboolean(extraction_section_name, "exclude_chin_points", fallback=True)
         equalise_histogram = config.getboolean(extraction_section_name, "equalise_histogram", fallback=True)
         target_size = max(1, config.getint(extraction_section_name, "target_size", fallback=224))
-
-        # Import face_reidentifier
-        import face_reidentifier
 
         # Create the face reidentifier
         reidentifier_section_name = "face_reidentifier.FaceReidentifier"
