@@ -13,14 +13,14 @@ class FaceReidentifier(object):
         self._model = None
         try:
             if gpu is not None and torch.cuda.is_available():
-                self._device = torch.device('cuda:%d' % gpu)
+                self._gpu = int(gpu)
+                self._device = torch.device('cuda:%d' % self._gpu)
                 self._model = model.to(self._device)
-                self._gpu = gpu
         finally:
             if self._model is None:
+                self._gpu = None
                 self._device = torch.device('cpu')
                 self._model = model.to(self._device)
-                self._gpu = None
         self._model.eval()
         self._distance_threshold = max(0.0, distance_threshold)
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
