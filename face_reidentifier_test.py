@@ -104,10 +104,10 @@ def main():
             gpu = None
         print("\nCreating face reidentifier with the following parameter...\n"
               "model_path = \"" + vgg_model_path + "\"")
-        if gpu >= 0:
-            print("gpu = %d" % gpu)
-        else:
+        if gpu is None:
             print("gpu = None")
+        else:
+            print("gpu = %d" % gpu)
         reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path, gpu=gpu)
         print("Face reidentifier created.")
 

@@ -5,12 +5,12 @@ import numpy as np
 
 
 class VGG(nn.Module):
-    def __init__(self, convolutional_layer_config, num_classes, batch_norm=False, init_weights=False):
+    def __init__(self, convolutional_layers_config, num_classes, batch_norm=False, init_weights=False):
         super(VGG, self).__init__()
-        self.features = VGG.make_convolutional_layers(convolutional_layer_config, batch_norm)
+        self.features = VGG.make_convolutional_layers(convolutional_layers_config, batch_norm)
         feature_channels = 0
         max_pools = 0
-        for v in reversed(convolutional_layer_config):
+        for v in reversed(convolutional_layers_config):
             if v == 'M':
                 max_pools += 1
             elif feature_channels <= 0:
@@ -68,8 +68,8 @@ def load_vgg_face_16_feature_extractor(weights_path):
     Load from VGG 16-layer model (configuration "D")
     """
 
-    model = VGG(num_classes=8, convolutional_layer_config=[64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M',
-                                                           512, 512, 512, 'M', 512, 512, 512, 'M'],
+    model = VGG(num_classes=8, convolutional_layers_config=[64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M',
+                                                            512, 512, 512, 'M', 512, 512, 512, 'M'],
                 batch_norm=False, init_weights=False)
 
     pretrained_dict = torch.load(weights_path)
