@@ -1,5 +1,4 @@
 from .misc import *
-from keras.models import Model
 import scipy.spatial.distance as sd
 from collections import OrderedDict
 from scipy.optimize import linear_sum_assignment
@@ -8,11 +7,21 @@ from scipy.optimize import linear_sum_assignment
 class FaceReidentifier(object):
     def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
-                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None):
+                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None, gpu=None):
         if len(model_path) > 0:
-            model = load_vgg_face_16_model(model_path)
-            model = Model(model.input, model.get_layer('fc7/relu').output)
-        self._model = model
+            model = load_vgg_face_16_feature_extractor(model_path)
+        self._model = None
+        try:
+            if gpu is not None and torch.cuda.is_available():
+                self._device = torch.device('cuda:%d' % gpu)
+                self._model = model.to(self._device)
+                self._gpu = gpu
+        finally:
+            if self._model is None:
+                self._device = torch.device('cpu')
+                self._model = model.to(self._device)
+                self._gpu = None
+        self._model.eval()
         self._distance_threshold = max(0.0, distance_threshold)
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._quality_threshold = quality_threshold
@@ -104,6 +113,10 @@ class FaceReidentifier(object):
     def distance_metric(self, value):
         self._distance_metric = value
 
+    @property
+    def gpu(self):
+        return self._gpu
+
     def reset(self, reset_face_id_counter=True):
         self._database.clear()
         self._unidentified_tracklets.clear()
@@ -155,7 +168,11 @@ class FaceReidentifier(object):
                 face_image[..., 0] -= self._mean_rgb[0]
                 face_image[..., 1] -= self._mean_rgb[1]
                 face_image[..., 2] -= self._mean_rgb[2]
-        face_descriptors = self._model.predict(face_images)
+        face_images = torch.from_numpy(face_images.transpose([0, 3, 1, 2]))
+        if self._device.type == 'cpu':
+            face_descriptors = self._model(face_images).detach().numpy()
+        else:
+            face_descriptors = self._model(face_images.to(self._device)).detach().cpu().numpy()
         for face_descriptor in face_descriptors:
             face_descriptor /= max(np.finfo(np.float).eps, np.linalg.norm(face_descriptor))
         return list(face_descriptors)

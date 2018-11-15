@@ -1,73 +1,83 @@
 import cv2
+import torch
+import torch.nn as nn
 import numpy as np
-from keras import backend as K
-from keras.utils import layer_utils
-from keras.layers import Flatten, Dense, Input, Activation, Conv2D, MaxPooling2D
-from keras.models import Model
 
 
-def load_vgg_face_16_model(weights_path, classes=2622):
+class VGG(nn.Module):
+    def __init__(self, convolutional_layer_config, num_classes, batch_norm=False, init_weights=False):
+        super(VGG, self).__init__()
+        self.features = VGG.make_convolutional_layers(convolutional_layer_config, batch_norm)
+        feature_channels = 0
+        max_pools = 0
+        for v in reversed(convolutional_layer_config):
+            if v == 'M':
+                max_pools += 1
+            elif feature_channels <= 0:
+                feature_channels = v
+        self.classifier = nn.Sequential(
+            nn.Linear(feature_channels * (224 / 2 ** max_pools) ** 2, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(),
+            nn.Linear(4096, num_classes),
+        )
+        if init_weights:
+            self._initialize_weights()
 
-    img_input = Input(shape=(224, 224, 3))
+    @staticmethod
+    def make_convolutional_layers(config, batch_norm=False):
+        layers = []
+        in_channels = 3
+        for v in config:
+            if v == 'M':
+                layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+            else:
+                conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+                if batch_norm:
+                    layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+                else:
+                    layers += [conv2d, nn.ReLU(inplace=True)]
+                in_channels = v
+        return nn.Sequential(*layers)
 
-    # Block 1
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_1')(
-        img_input)
-    x = Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_2')(x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool1')(x)
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
 
-    # Block 2
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2_1')(
-        x)
-    x = Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2_2')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool2')(x)
+    def _initialize_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
 
-    # Block 3
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_1')(
-        x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_2')(
-        x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool3')(x)
 
-    # Block 4
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_1')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool4')(x)
+def load_vgg_face_16_feature_extractor(weights_path):
+    """
+    Load from VGG 16-layer model (configuration "D")
+    """
 
-    # Block 5
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_1')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_2')(
-        x)
-    x = Conv2D(512, (3, 3), activation='relu', padding='same', name='conv5_3')(
-        x)
-    x = MaxPooling2D((2, 2), strides=(2, 2), name='pool5')(x)
+    model = VGG(num_classes=8, convolutional_layer_config=[64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M',
+                                                           512, 512, 512, 'M', 512, 512, 512, 'M'],
+                batch_norm=False, init_weights=False)
 
-    x = Flatten(name='flatten')(x)
-    x = Dense(4096, name='fc6')(x)
-    x = Activation('relu', name='fc6/relu')(x)
-    x = Dense(4096, name='fc7')(x)
-    x = Activation('relu', name='fc7/relu')(x)
-    x = Dense(classes, name='fc8')(x)
-    x = Activation('softmax', name='fc8/softmax')(x)
+    pretrained_dict = torch.load(weights_path)
+    model.load_state_dict(pretrained_dict)
 
-    inputs = img_input
-
-    # Create model
-    model = Model(inputs, x, name='vggface_vgg16')
-
-    # if weights_path is not None:
-    model.load_weights(weights_path, by_name=True) # load weights
-
-    if K.backend() == 'theano':
-        layer_utils.convert_all_kernels_in_model(model)
+    classifier = list(model.classifier.children())
+    del classifier[-2:]     # Drop the last 2 layers (fc8 and dropout)
+    model.classifier = torch.nn.Sequential(*classifier)
 
     return model
 

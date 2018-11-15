@@ -1,7 +1,3 @@
-models/*.model
-models/*.dat
-models/*.h5
-models/*.pt
 .idea
 *.pyc
 .ipynb_checkpoints
