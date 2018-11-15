@@ -16,7 +16,7 @@ class VGG(nn.Module):
             elif feature_channels <= 0:
                 feature_channels = v
         self.classifier = nn.Sequential(
-            nn.Linear(feature_channels * (224 / 2 ** max_pools) ** 2, 4096),
+            nn.Linear(int(feature_channels * (224 / 2 ** max_pools) ** 2), 4096),
             nn.ReLU(True),
             nn.Dropout(),
             nn.Linear(4096, 4096),
