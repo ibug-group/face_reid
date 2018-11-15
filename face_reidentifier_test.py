@@ -98,9 +98,17 @@ def main():
         # Create the face reidentifier
         reidentifier_section_name = "face_reidentifier.FaceReidentifier"
         vgg_model_path = config.get(reidentifier_section_name, "model_path").replace('\'', '').replace('\"', '')
+        try:
+            gpu = config.getint(reidentifier_section_name, "gpu")
+        except:
+            gpu = None
         print("\nCreating face reidentifier with the following parameter...\n"
               "model_path = \"" + vgg_model_path + "\"")
-        reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path)
+        if gpu >= 0:
+            print("gpu = %d" % gpu)
+        else:
+            print("gpu = None")
+        reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path, gpu=gpu)
         print("Face reidentifier created.")
 
         # Configure the reidentifier
