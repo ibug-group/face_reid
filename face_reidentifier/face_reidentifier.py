@@ -1,3 +1,4 @@
+import warnings
 from .misc import *
 import scipy.spatial.distance as sd
 from collections import OrderedDict
@@ -12,10 +13,14 @@ class FaceReidentifier(object):
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
         try:
-            if gpu is not None and torch.cuda.is_available():
-                self._gpu = int(gpu)
-                self._device = torch.device('cuda:%d' % self._gpu)
-                self._model = model.to(self._device)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                if gpu is not None and torch.cuda.is_available():
+                    self._gpu = int(gpu)
+                    capability = torch.cuda.get_device_capability(self._gpu)
+                    if capability[0] >= 3 and capability != (3, 0):
+                        self._device = torch.device('cuda:%d' % self._gpu)
+                        self._model = model.to(self._device)
         finally:
             if self._model is None:
                 self._gpu = None

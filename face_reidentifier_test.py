@@ -109,7 +109,10 @@ def main():
         else:
             print("gpu = %d" % gpu)
         reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path, gpu=gpu)
-        print("Face reidentifier created.")
+        if gpu is None or reidentifier.gpu == gpu:
+            print("Face reidentifier created.")
+        else:
+            print("Face reidentifier created, but using CPU as fallback.")
 
         # Configure the reidentifier
         reidentifier.distance_threshold = config.getfloat(reidentifier_section_name, "distance_threshold",
