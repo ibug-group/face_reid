@@ -72,7 +72,7 @@ def load_vgg_face_16_feature_extractor(weights_path):
                                                             512, 512, 512, 'M', 512, 512, 512, 'M'],
                 batch_norm=False, init_weights=False)
 
-    pretrained_dict = torch.load(weights_path)
+    pretrained_dict = torch.load(weights_path, map_location=lambda storage, loc: storage)
     model.load_state_dict(pretrained_dict)
 
     classifier = list(model.classifier.children())
