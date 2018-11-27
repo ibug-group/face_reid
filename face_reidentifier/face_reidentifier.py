@@ -21,6 +21,8 @@ class FaceReidentifier(object):
                     if capability[0] >= 3 and capability != (3, 0):
                         self._device = torch.device('cuda:%d' % self._gpu)
                         self._model = model.to(self._device)
+        except:
+            pass
         finally:
             if self._model is None:
                 self._gpu = None
