@@ -1,6 +1,3 @@
-<<<<<<< HEAD
 models/*.pt
-=======
->>>>>>> e85ed1ffa94871b59e7a7c39b36474c8978435e0
 .idea
 *.pyc
