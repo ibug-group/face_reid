@@ -3,11 +3,20 @@ import cv2
 import sys
 import math
 import numpy as np
-import face_reidentifier
+import ibug.face_reid
+import ibug.face_tracking
 try:
     from configparser import ConfigParser
 except ImportError:
     from ConfigParser import ConfigParser
+
+
+def read_path(config, working_folder, section, key):
+    path = config.get(section, key).replace('\'', '').replace('\"', '')
+    if os.path.isabs(path):
+        return path
+    else:
+        return os.path.realpath(os.path.join(working_folder, path))
 
 
 def main():
@@ -20,35 +29,22 @@ def main():
             config_file = os.path.splitext(os.path.realpath(__file__))[0] + ".ini"
         else:
             config_file = sys.argv[2]
+        config_folder = os.path.dirname(config_file)
 
         # Parse the INI file
         config = ConfigParser()
         config.read(config_file)
 
-        # Import ibug_face_tracker
-        tracker_section_name = "ibug_face_tracker.MultiFaceTracker"
-        tracker_repository_path = config.get(tracker_section_name, "repository_path", fallback="").replace(
-            '\'', '').replace('\"', '')
-        if not os.path.isabs(tracker_repository_path):
-            tracker_repository_path = os.path.realpath(os.path.join(os.path.dirname(__file__),
-                                                                    tracker_repository_path))
-        sys.path.append(tracker_repository_path)
-        import ibug_face_tracker
-
         # Create the multi-face tracker
-        ert_model_path = config.get(tracker_section_name, "ert_model_path").replace('\'', '').replace('\"', '')
-        auxiliary_model_path = config.get(tracker_section_name, "auxiliary_model_path").replace(
-            '\'', '').replace('\"', '')
-        if not os.path.isabs(ert_model_path):
-            ert_model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), ert_model_path))
-        if not os.path.isabs(auxiliary_model_path):
-            auxiliary_model_path = os.path.realpath(os.path.join(os.path.dirname(__file__), auxiliary_model_path))
+        tracker_section_name = "ibug.face_tracking.MultiFaceTracker"
+        ert_model_path = read_path(config, config_folder, tracker_section_name, "ert_model_path")
+        auxiliary_model_path = read_path(config, config_folder, tracker_section_name, "auxiliary_model_path")
         faces_to_track = config.getint(tracker_section_name, "faces_to_track", fallback=1)
         print("Creating multi-face tracker with the following parameters...\n"
               "ert_model_path = \"" + ert_model_path + "\"\n"
               "auxiliary_model_path = \"" + auxiliary_model_path + "\"\n"
               "faces_to_track = %d" % faces_to_track)
-        tracker = ibug_face_tracker.MultiFaceTracker(ert_model_path, auxiliary_model_path, faces_to_track)
+        tracker = ibug.face_tracking.MultiFaceTracker(ert_model_path, auxiliary_model_path, faces_to_track)
         print("Multi-face tracker created.")
 
         # Configure the tracker
@@ -87,17 +83,15 @@ def main():
 
         # Load settings for face image extraction
         extraction_section_name = "face_image_extraction"
-        margin = config.get(extraction_section_name, "margin", fallback="0.225,0.225,0.225,0.225,").replace(
-            '\'', '').replace('\"', '').replace(' ', '').replace('\t', '')
-        margin = tuple([float(x) for x in margin.split(',') if len(x) > 0])
+        margin = eval(config.get(extraction_section_name, "margin", fallback="(0.225, 0.225, 0.225, 0.225)"))
         assert len(margin) == 4
         exclude_chin_points = config.getboolean(extraction_section_name, "exclude_chin_points", fallback=True)
         equalise_histogram = config.getboolean(extraction_section_name, "equalise_histogram", fallback=True)
         target_size = max(1, config.getint(extraction_section_name, "target_size", fallback=224))
 
         # Create the face reidentifier
-        reidentifier_section_name = "face_reidentifier.FaceReidentifier"
-        vgg_model_path = config.get(reidentifier_section_name, "model_path").replace('\'', '').replace('\"', '')
+        reidentifier_section_name = "ibug.face_reid.FaceReidentifier"
+        vgg_model_path = read_path(config, config_folder, reidentifier_section_name, "model_path")
         try:
             gpu = config.getint(reidentifier_section_name, "gpu")
         except:
@@ -108,7 +102,7 @@ def main():
             print("gpu = None")
         else:
             print("gpu = %d" % gpu)
-        reidentifier = face_reidentifier.FaceReidentifier(vgg_model_path, gpu=gpu)
+        reidentifier = ibug.face_reid.FaceReidentifier(vgg_model_path, gpu=gpu)
         if gpu is None or reidentifier.gpu == gpu:
             print("Face reidentifier created.")
         else:
@@ -128,9 +122,7 @@ def main():
                                                               fallback=reidentifier.descriptor_list_capacity)
         reidentifier.descriptor_update_rate = config.getfloat(reidentifier_section_name, "descriptor_update_rate",
                                                               fallback=reidentifier.descriptor_update_rate)
-        mean_rgb = config.get(reidentifier_section_name, "mean_rgb", fallback="").replace(
-            '\'', '').replace('\"', '').replace(' ', '').replace('\t', '')
-        mean_rgb = tuple([float(x) for x in mean_rgb.split(',') if len(x) > 0])
+        mean_rgb = eval(config.get(reidentifier_section_name, "mean_rgb", fallback="()"))
         if len(mean_rgb) == 3:
             reidentifier.mean_rgb = mean_rgb
         distance_metric = config.get(reidentifier_section_name, "distance_metric",
@@ -223,15 +215,15 @@ def main():
                     tracklet_ids_to_be_identified = [x for x in tracking_context.keys() if
                                                      tracking_context[x]['tracking_length'] >=
                                                      minimum_tracking_length]
-                    face_images = [face_reidentifier.extract_face_image(frame,
-                                                                        tracking_context[x]['facial_landmarks'],
-                                                                        (target_size, target_size), margin,
-                                                                        tracking_context[x]['head_pose'],
-                                                                        exclude_chin_points=exclude_chin_points)[0]
+                    face_images = [ibug.face_reid.extract_face_image(frame,
+                                                                     tracking_context[x]['facial_landmarks'],
+                                                                     (target_size, target_size), margin,
+                                                                     tracking_context[x]['head_pose'],
+                                                                     exclude_chin_points=exclude_chin_points)[0]
                                    for x in tracklet_ids_to_be_identified]
                     qualities = [tracking_context[x]['quality'] for x in tracklet_ids_to_be_identified]
                     if equalise_histogram:
-                        face_images = [face_reidentifier.equalise_histogram(x) for x in face_images]
+                        face_images = [ibug.face_reid.equalise_histogram(x) for x in face_images]
                     face_ids = reidentifier.reidentify_faces(face_images, tracklet_ids_to_be_identified, qualities)
                     for idx, tracklet_id in enumerate(tracklet_ids_to_be_identified):
                         tracking_context[tracklet_id]['face_id'] = face_ids[idx]
@@ -252,13 +244,13 @@ def main():
                     if face_id > 0:
                         colour = colours[(face_id - 1) % len(colours)]
                         next_colour = colours[face_id % len(colours)]
-                        ibug_face_tracker.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
-                                                                                colour=next_colour)
-                        ibug_face_tracker.FaceTracker.plot_facial_landmarks(frame, face['facial_landmarks'],
-                                                                            colour=colour)
-                        if 'eye_landmarks' in face:
-                            ibug_face_tracker.FaceTracker.plot_eye_landmarks(frame, face['eye_landmarks'],
+                        ibug.face_tracking.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
+                                                                                 colour=next_colour)
+                        ibug.face_tracking.FaceTracker.plot_facial_landmarks(frame, face['facial_landmarks'],
                                                                              colour=colour)
+                        if 'eye_landmarks' in face:
+                            ibug.face_tracking.FaceTracker.plot_eye_landmarks(frame, face['eye_landmarks'],
+                                                                              colour=colour)
                         if 'pitch' in face:
                             text_origin = (int(math.floor(min(face['facial_landmarks'][:, 0]))),
                                            int(math.ceil(max(face['facial_landmarks'][:, 1]))) + 16)
@@ -268,17 +260,17 @@ def main():
                         cv2.putText(frame, "Face #%d" % face_id, text_origin, cv2.FONT_HERSHEY_DUPLEX,
                                     0.6, next_colour, lineType=cv2.LINE_AA)
                     else:
-                        ibug_face_tracker.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
-                                                                                colour=unidentified_face_colours[1])
-                        ibug_face_tracker.FaceTracker.plot_facial_landmarks(frame, face['facial_landmarks'],
-                                                                            colour=unidentified_face_colours[0])
-                        if 'eye_landmarks' in face:
-                            ibug_face_tracker.FaceTracker.plot_eye_landmarks(frame, face['eye_landmarks'],
+                        ibug.face_tracking.FaceTracker.plot_landmark_connections(frame, face['facial_landmarks'],
+                                                                                 colour=unidentified_face_colours[1])
+                        ibug.face_tracking.FaceTracker.plot_facial_landmarks(frame, face['facial_landmarks'],
                                                                              colour=unidentified_face_colours[0])
+                        if 'eye_landmarks' in face:
+                            ibug.face_tracking.FaceTracker.plot_eye_landmarks(frame, face['eye_landmarks'],
+                                                                              colour=unidentified_face_colours[0])
 
                 # Show the result
                 cv2.imshow(script_name, frame)
-                key = cv2.waitKey(1)
+                key = cv2.waitKey(1) % 2 ** 16
                 if key == ord('q') or key == ord('Q'):
                     print("\'Q\' pressed, we are done here.")
                     break
