@@ -3,6 +3,7 @@ from .misc import *
 import scipy.spatial.distance as sd
 from collections import OrderedDict
 from scipy.optimize import linear_sum_assignment
+from copy import deepcopy
 
 
 class FaceReidentifier(object):
@@ -341,3 +342,77 @@ class FaceReidentifier(object):
             return face_ids
         else:
             return []
+
+
+class FaceReidentifierEx(FaceReidentifier):
+    def __init__(self, reidentification_interval=8, minimum_tracklet_length=6,
+                 face_margin=(0.225, 0.225, 0.225, 0.225), exclude_chin_points=True,
+                 equalise_histogram=True, normalised_face_size=224, *args, **kwargs):
+        super(FaceReidentifierEx, self).__init__(*args, **kwargs)
+        self._reidentification_interval = max(1, int(reidentification_interval))
+        self._minimum_tracklet_length = max(1, int(minimum_tracklet_length))
+        assert len(face_margin) == 4
+        self._face_margin = face_margin
+        self._exclude_chin_points = bool(exclude_chin_points)
+        self._equalise_histogram = bool(equalise_histogram)
+        self._normalised_face_size = max(1, int(normalised_face_size))
+        self._tracking_context = {}
+        self._reidentification_countdown = self._reidentification_interval
+
+    @property
+    def reidentification_interval(self):
+        return self._reidentification_interval
+
+    @reidentification_interval.setter
+    def reidentification_interval(self, value):
+        self._reidentification_interval = max(1, int(value))
+
+    @property
+    def minimum_tracklet_length(self):
+        return self._minimum_tracklet_length
+
+    @minimum_tracklet_length.setter
+    def minimum_tracklet_length(self, value):
+        self._minimum_tracklet_length = max(1, int(value))
+
+    @property
+    def face_margin(self):
+        return self._face_margin
+
+    @face_margin.setter
+    def face_margin(self, value):
+        assert len(value) == 4
+        self._face_margin = value
+
+    @property
+    def exclude_chin_points(self):
+        return self._exclude_chin_points
+
+    @exclude_chin_points.setter
+    def exclude_chin_points(self, value):
+        self._exclude_chin_points = bool(value)
+
+    @property
+    def equalise_histogram(self):
+        return self._equalise_histogram
+
+    @equalise_histogram.setter
+    def equalise_histogram(self, value):
+        self._equalise_histogram = bool(value)
+
+    @property
+    def normalised_face_size(self):
+        return self._normalised_face_size
+
+    @normalised_face_size.setter
+    def normalised_face_size(self, value):
+        self._normalised_face_size = max(1, int(value))
+
+    def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False):
+        pass
+
+    def reset(self, reset_reidentification_countdown=True, reset_face_id_counter=True):
+        super(FaceReidentifierEx, self).reset(reset_face_id_counter)
+        self._tracking_context.clear()
+        if reset_reidentification_countdown:
+            self._reidentification_countdown = self._reidentification_interval

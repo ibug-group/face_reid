@@ -23,7 +23,7 @@ config = {
     'author': 'Jie Shen and Yujiang Wang',
     'author_email': 'js1907@imperial.ac.uk',
     'packages': ['ibug.face_reid'],
-    'install_requires': ['numpy>=1.15.0', 'opencv-python>=3.4.1', 'torch>=0.4.1'],
+    'install_requires': ['numpy>=1.15.0', 'opencv-python>=3.4.1', 'torch>=0.4.1', 'scipy>=1.1.0'],
     'zip_safe': False
 }
 setup(**config)

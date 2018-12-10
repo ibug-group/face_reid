@@ -102,7 +102,7 @@ def main():
             print("gpu = None")
         else:
             print("gpu = %d" % gpu)
-        reidentifier = ibug.face_reid.FaceReidentifier(vgg_model_path, gpu=gpu)
+        reidentifier = ibug.face_reid.FaceReidentifierEx(model_path=vgg_model_path, gpu=gpu)
         if gpu is None or reidentifier.gpu == gpu:
             print("Face reidentifier created.")
         else:
