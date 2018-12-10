@@ -353,8 +353,8 @@ class FaceReidentifierEx(FaceReidentifier):
         super(FaceReidentifierEx, self).__init__(*args, **kwargs)
         self._reidentification_interval = max(1, int(reidentification_interval))
         self._minimum_tracklet_length = max(1, int(minimum_tracklet_length))
-        assert len(face_margin) == 4
         self._minimum_face_size = max(0.0, float(minimum_face_size))
+        assert len(face_margin) == 4
         self._face_margin = face_margin
         self._exclude_chin_points = bool(exclude_chin_points)
         self._equalise_histogram = bool(equalise_histogram)
@@ -453,8 +453,8 @@ class FaceReidentifierEx(FaceReidentifier):
                 if ('facial_landmarks' in face and (
                         face['facial_landmarks'][:, 0].min() <= 0.0 or
                         face['facial_landmarks'][:, 1].min() <= 0.0 or
-                        face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
-                        face['facial_landmarks'][:, 1].max() >= frame.shape[0] or
+                        frame is not None and face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
+                        frame is not None and face['facial_landmarks'][:, 1].max() >= frame.shape[0] or
                         max(face['facial_landmarks'][:, 0].max() - face['facial_landmarks'][:, 0].min(),
                             face['facial_landmarks'][:, 1].max() - face['facial_landmarks'][:, 1].min()) <
                         self._minimum_face_size)):
@@ -479,14 +479,12 @@ class FaceReidentifierEx(FaceReidentifier):
                 if (ignore_minimum_tracklet_length or
                         self._tracking_context[tracklet_id]['tracklet_length'] >=
                         self._minimum_tracklet_length):
-                    face_image = None
-                    if self._tracking_context[tracklet_id]['face_image'] is not None:
-                        if (face_image.shape[0] == self._normalised_face_size and
-                                face_image.shape[1] == self._normalised_face_size):
-                            face_image = self._tracking_context[tracklet_id]['face_image']
-                        else:
-                            face_image = cv2.resize(self._tracking_context[tracklet_id]['face_image'],
-                                                    (self._normalised_face_size, self._normalised_face_size))
+                    face_image = self._tracking_context[tracklet_id]['face_image']
+                    if face_image is not None:
+                        if (face_image.shape[0] != self._normalised_face_size or
+                                face_image.shape[1] != self._normalised_face_size):
+                            face_image = cv2.resize(face_image, (self._normalised_face_size,
+                                                                 self._normalised_face_size))
                     elif frame is not None and self._tracking_context[tracklet_id]['facial_landmarks'] is not None:
                         face_image = extract_face_image(frame,
                                                         self._tracking_context[tracklet_id]['facial_landmarks'],

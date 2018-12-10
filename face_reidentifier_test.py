@@ -74,7 +74,7 @@ def main():
               "\nface_detection_scale = %.6f" % tracker.face_detection_scale +
               "\nminimum_face_size = %d" % tracker.minimum_face_size +
               "\noverlap_threshold = %.6f" % tracker.overlap_threshold +
-              "\nestimate_head_pose = %s" % str(tracker.estimate_head_pose) +
+              "\nestimate_head_pose = %r" % tracker.estimate_head_pose +
               "\neye_iterations = %d" % tracker.eye_iterations +
               "\nfailure_detection_interval = %d" % tracker.failure_detection_interval +
               "\nhard_failure_threshold = %.6f" % tracker.hard_failure_threshold +
@@ -121,7 +121,7 @@ def main():
                                      fallback=reidentifier.distance_metric)
         reidentifier.distance_metric = distance_metric.replace('\'', '').replace(
             '\"', '').replace(' ', '').replace('\t', '').lower()
-        reidentifier.face_margin = eval(config.get(reidentifier_section_name, "margin",
+        reidentifier.face_margin = eval(config.get(reidentifier_section_name, "face_margin",
                                                    fallback="(0.225, 0.225, 0.225, 0.225)"))
         reidentifier.exclude_chin_points = config.getboolean(reidentifier_section_name,
                                                              "exclude_chin_points", fallback=True)
@@ -137,7 +137,6 @@ def main():
                                           max(np.finfo(np.float).eps,
                                               reidentifier.face_margin[0] + 1.0 + reidentifier.face_margin[2],
                                               reidentifier.face_margin[1] + 1.0 + reidentifier.face_margin[3]))
-
         print("\nFace reidentifier configured with the following settings:"
               "\ndistance_threshold = %.6f" % reidentifier.distance_threshold +
               "\nneighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold +
@@ -190,16 +189,16 @@ def main():
                 # Reidentify the faces
                 frame_number += 1
                 identities = reidentifier.reidentify_tracked_faces(frame, tracklets)
-                identified_faces = [identities[x]['face_id'] for x in identities.keys() if
-                                    identities[x]['face_id'] > 0]
-                if len(identified_faces) == 0:
+                valid_face_ids = [identities[x]['face_id'] for x in identities.keys() if
+                                  identities[x]['face_id'] > 0]
+                if len(valid_face_ids) == 0:
                     print("Frame #%d: no face is tracked." % frame_number)
-                elif len(identified_faces) == 1:
-                    print("Frame #%d: face #%d is tracked." % (frame_number, identified_faces[0]))
+                elif len(valid_face_ids) == 1:
+                    print("Frame #%d: face #%d is tracked." % (frame_number, valid_face_ids[0]))
                 else:
                     print("Frame #%d: face #" % frame_number +
-                          ", #".join([str(face_id) for face_id in identified_faces[0:-1]]) +
-                          " and #%d" % identified_faces[-1] + " are tracked.")
+                          ", #".join([str(face_id) for face_id in valid_face_ids[0:-1]]) +
+                          " and #%d" % valid_face_ids[-1] + " are tracked.")
 
                 # Plot the tracked faces
                 for face in tracklets:
