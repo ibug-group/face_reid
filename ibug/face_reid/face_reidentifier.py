@@ -493,7 +493,7 @@ class FaceReidentifierEx(FaceReidentifier):
                                                         (self._normalised_face_size, self._normalised_face_size),
                                                         self._face_margin,
                                                         self._tracking_context[tracklet_id]['head_pose'],
-                                                        xclude_chin_points=self._exclude_chin_points)[0]
+                                                        exclude_chin_points=self._exclude_chin_points)[0]
                     if face_image is not None:
                         if self._equalise_histogram:
                             self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(face_image)

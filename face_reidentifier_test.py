@@ -69,28 +69,20 @@ def main():
         tracker.maximum_number_of_soft_failures = config.getint(tracker_section_name,
                                                                 "maximum_number_of_soft_failures",
                                                                 fallback=tracker.maximum_number_of_soft_failures)
-        print("\nMulti-face tracker configured with the following settings: \n"
-              "face_detection_interval = %d" % tracker.face_detection_interval + "\n"
-              "face_detection_scale = %.6f" % tracker.face_detection_scale + "\n"
-              "minimum_face_size = %d" % tracker.minimum_face_size + "\n"
-              "overlap_threshold = %.6f" % tracker.overlap_threshold + "\n"
-              "estimate_head_pose = %s" % str(tracker.estimate_head_pose) + "\n"
-              "eye_iterations = %d" % tracker.eye_iterations + "\n"
-              "failure_detection_interval = %d" % tracker.failure_detection_interval + "\n"
-              "hard_failure_threshold = %.6f" % tracker.hard_failure_threshold + "\n"
-              "soft_failure_threshold = %.6f" % tracker.soft_failure_threshold + "\n"
-              "maximum_number_of_soft_failures = %d" % tracker.maximum_number_of_soft_failures)
-
-        # Load settings for face image extraction
-        extraction_section_name = "face_image_extraction"
-        margin = eval(config.get(extraction_section_name, "margin", fallback="(0.225, 0.225, 0.225, 0.225)"))
-        assert len(margin) == 4
-        exclude_chin_points = config.getboolean(extraction_section_name, "exclude_chin_points", fallback=True)
-        equalise_histogram = config.getboolean(extraction_section_name, "equalise_histogram", fallback=True)
-        target_size = max(1, config.getint(extraction_section_name, "target_size", fallback=224))
+        print("\nMulti-face tracker configured with the following settings:" +
+              "\nface_detection_interval = %d" % tracker.face_detection_interval +
+              "\nface_detection_scale = %.6f" % tracker.face_detection_scale +
+              "\nminimum_face_size = %d" % tracker.minimum_face_size +
+              "\noverlap_threshold = %.6f" % tracker.overlap_threshold +
+              "\nestimate_head_pose = %s" % str(tracker.estimate_head_pose) +
+              "\neye_iterations = %d" % tracker.eye_iterations +
+              "\nfailure_detection_interval = %d" % tracker.failure_detection_interval +
+              "\nhard_failure_threshold = %.6f" % tracker.hard_failure_threshold +
+              "\nsoft_failure_threshold = %.6f" % tracker.soft_failure_threshold +
+              "\nmaximum_number_of_soft_failures = %d" % tracker.maximum_number_of_soft_failures)
 
         # Create the face reidentifier
-        reidentifier_section_name = "ibug.face_reid.FaceReidentifier"
+        reidentifier_section_name = "ibug.face_reid.FaceReidentifierEx"
         vgg_model_path = read_path(config, config_folder, reidentifier_section_name, "model_path")
         try:
             gpu = config.getint(reidentifier_section_name, "gpu")
@@ -129,23 +121,44 @@ def main():
                                      fallback=reidentifier.distance_metric)
         reidentifier.distance_metric = distance_metric.replace('\'', '').replace(
             '\"', '').replace(' ', '').replace('\t', '').lower()
-        print("\nFace reidentifier configured with the following settings: \n"
-              "distance_threshold = %.6f" % reidentifier.distance_threshold + "\n"
-              "neighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold + "\n"
-              "quality_threshold = %.6f" % reidentifier.quality_threshold + "\n"
-              "database_capacity = %d" % reidentifier.database_capacity + "\n"
-              "descriptor_list_capacity = %d" % reidentifier.descriptor_list_capacity + "\n"
-              "descriptor_update_rate = %.6f" % reidentifier.descriptor_update_rate + "\n"
-              "mean_rgb = (%.6f, %.6f, %.6f)" % (reidentifier.mean_rgb[0],
-                                                 reidentifier.mean_rgb[1],
-                                                 reidentifier.mean_rgb[2]) + "\n"
-              "distance_metric = %s" % reidentifier.distance_metric)
+        reidentifier.face_margin = eval(config.get(reidentifier_section_name, "margin",
+                                                   fallback="(0.225, 0.225, 0.225, 0.225)"))
+        reidentifier.exclude_chin_points = config.getboolean(reidentifier_section_name,
+                                                             "exclude_chin_points", fallback=True)
+        reidentifier.equalise_histogram = config.getboolean(reidentifier_section_name,
+                                                            "equalise_histogram", fallback=True)
+        reidentifier.normalised_face_size = config.getint(reidentifier_section_name,
+                                                          "normalised_face_size", fallback=224)
+        reidentifier.reidentification_interval = config.getint(reidentifier_section_name,
+                                                               "reidentification_interval", fallback=8)
+        reidentifier.minimum_tracklet_length = config.getint(reidentifier_section_name,
+                                                             "minimum_tracklet_length", fallback=6)
+        reidentifier.minimum_face_size = (tracker.minimum_face_size /
+                                          max(np.finfo(np.float).eps,
+                                              reidentifier.face_margin[0] + 1.0 + reidentifier.face_margin[2],
+                                              reidentifier.face_margin[1] + 1.0 + reidentifier.face_margin[3]))
 
-        # Load settings for the tracking context
-        context_section_name = "tracking_context"
-        face_reidentification_interval = max(1, config.getint(context_section_name, "face_reidentification_interval",
-                                                              fallback=8))
-        minimum_tracking_length = max(1, config.getint(context_section_name, "minimum_tracking_length", fallback=6))
+        print("\nFace reidentifier configured with the following settings:"
+              "\ndistance_threshold = %.6f" % reidentifier.distance_threshold +
+              "\nneighbour_count_threshold = %d" % reidentifier.neighbour_count_threshold +
+              "\nquality_threshold = %.6f" % reidentifier.quality_threshold +
+              "\ndatabase_capacity = %d" % reidentifier.database_capacity +
+              "\ndescriptor_list_capacity = %d" % reidentifier.descriptor_list_capacity +
+              "\ndescriptor_update_rate = %.6f" % reidentifier.descriptor_update_rate +
+              "\nmean_rgb = (%.6f, %.6f, %.6f)" % (reidentifier.mean_rgb[0],
+                                                   reidentifier.mean_rgb[1],
+                                                   reidentifier.mean_rgb[2]) +
+              "\ndistance_metric = %s" % reidentifier.distance_metric +
+              "\nface_margin = (%.3f, %.3f, %.3f, %.3f)" % (reidentifier.face_margin[0],
+                                                            reidentifier.face_margin[1],
+                                                            reidentifier.face_margin[2],
+                                                            reidentifier.face_margin[3]) +
+              "\nexclude_chin_points = %r" % reidentifier.exclude_chin_points +
+              "\nequalise_histogram = %r" % reidentifier.equalise_histogram +
+              "\nnormalised_face_size = %d" % reidentifier.normalised_face_size +
+              "\nreidentification_interval = %d" % reidentifier.reidentification_interval +
+              "\nminimum_tracklet_length = %d" % reidentifier.minimum_tracklet_length +
+              "\nminimum_face_size = %.6f" % reidentifier.minimum_face_size)
 
         # Now open the webcam
         webcam_section_name = "cv2.VideoCapture"
@@ -163,13 +176,9 @@ def main():
 
         # Start tracking!
         frame_number = 0
-        tracking_context = {}
         colours = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255), (255, 0, 255), (255, 255, 0),
                    (0, 128, 255), (128, 255, 0), (255, 0, 128), (128, 0, 255), (0, 255, 128), (255, 128, 0)]
         unidentified_face_colours = [(128, 128, 128), (192, 192, 192)]
-        minimum_good_face_size = tracker.minimum_face_size / max(np.finfo(np.float).eps,
-                                                                 margin[0] + 1.0 + margin[2],
-                                                                 margin[1] + 1.0 + margin[3])
         print("\nFace tracking started, you may press \'Q\' to stop or \'R\' to reset...")
         while True:
             ret, frame = webcam.read()
@@ -178,69 +187,23 @@ def main():
                 tracker.track(frame)
                 tracklets = tracker.current_result
 
-                # Update tracking context
-                for tracklet_id in tracking_context.keys():
-                    tracking_context[tracklet_id]['tracked'] = False
-                for face in tracklets:
-                    tracklet_id = face['id']
-                    if tracklet_id in tracking_context:
-                        tracking_context[tracklet_id]['tracking_length'] += 1
-                    else:
-                        tracking_context[tracklet_id] = {'tracking_length': 1, 'face_id': 0}
-                    tracking_context[tracklet_id]['tracked'] = True
-                    tracking_context[tracklet_id]['facial_landmarks'] = face['facial_landmarks']
-                    if 'pitch' in face:
-                        tracking_context[tracklet_id]['head_pose'] = (face['pitch'], face['yaw'], face['roll'])
-                    else:
-                        tracking_context[tracklet_id]['head_pose'] = None
-                    if (face['facial_landmarks'][:, 0].min() <= 0.0 or
-                            face['facial_landmarks'][:, 1].min() <= 0.0 or
-                            face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
-                            face['facial_landmarks'][:, 1].max() >= frame.shape[0] or
-                            max(face['facial_landmarks'][:, 0].max() - face['facial_landmarks'][:, 0].min(),
-                                face['facial_landmarks'][:, 1].max() - face['facial_landmarks'][:, 1].min()) <
-                            minimum_good_face_size):
-                        tracking_context[tracklet_id]['quality'] = reidentifier.quality_threshold - 1.0
-                    elif 'most_recent_fitting_scores' in face:
-                        tracking_context[tracklet_id]['quality'] = np.max(face['most_recent_fitting_scores'])
-                    else:
-                        tracking_context[tracklet_id]['quality'] = reidentifier.quality_threshold
-                for tracklet_id in list(tracking_context.keys()):
-                    if not tracking_context[tracklet_id]['tracked']:
-                        del tracking_context[tracklet_id]
-
-                # Re-identify the faces
-                frame_number += + 1
-                if frame_number % face_reidentification_interval == 0:
-                    tracklet_ids_to_be_identified = [x for x in tracking_context.keys() if
-                                                     tracking_context[x]['tracking_length'] >=
-                                                     minimum_tracking_length]
-                    face_images = [ibug.face_reid.extract_face_image(frame,
-                                                                     tracking_context[x]['facial_landmarks'],
-                                                                     (target_size, target_size), margin,
-                                                                     tracking_context[x]['head_pose'],
-                                                                     exclude_chin_points=exclude_chin_points)[0]
-                                   for x in tracklet_ids_to_be_identified]
-                    qualities = [tracking_context[x]['quality'] for x in tracklet_ids_to_be_identified]
-                    if equalise_histogram:
-                        face_images = [ibug.face_reid.equalise_histogram(x) for x in face_images]
-                    face_ids = reidentifier.reidentify_faces(face_images, tracklet_ids_to_be_identified, qualities)
-                    for idx, tracklet_id in enumerate(tracklet_ids_to_be_identified):
-                        tracking_context[tracklet_id]['face_id'] = face_ids[idx]
-                tracked_faces = sorted([tracking_context[x]['face_id'] for x in tracking_context.keys() if
-                                        tracking_context[x]['face_id'] > 0])
-                if len(tracked_faces) == 0:
+                # Reidentify the faces
+                frame_number += 1
+                identities = reidentifier.reidentify_tracked_faces(frame, tracklets)
+                identified_faces = [identities[x]['face_id'] for x in identities.keys() if
+                                    identities[x]['face_id'] > 0]
+                if len(identified_faces) == 0:
                     print("Frame #%d: no face is tracked." % frame_number)
-                elif len(tracked_faces) == 1:
-                    print("Frame #%d: face #%d is tracked." % (frame_number, tracked_faces[0]))
+                elif len(identified_faces) == 1:
+                    print("Frame #%d: face #%d is tracked." % (frame_number, identified_faces[0]))
                 else:
                     print("Frame #%d: face #" % frame_number +
-                          ", #".join([str(face_id) for face_id in tracked_faces[0:-1]]) +
-                          " and #%d" % tracked_faces[-1] + " are tracked.")
+                          ", #".join([str(face_id) for face_id in identified_faces[0:-1]]) +
+                          " and #%d" % identified_faces[-1] + " are tracked.")
 
                 # Plot the tracked faces
                 for face in tracklets:
-                    face_id = tracking_context[face['id']]['face_id']
+                    face_id = identities[face['id']]['face_id']
                     if face_id > 0:
                         colour = colours[(face_id - 1) % len(colours)]
                         next_colour = colours[face_id % len(colours)]
@@ -251,7 +214,7 @@ def main():
                         if 'eye_landmarks' in face:
                             ibug.face_tracking.FaceTracker.plot_eye_landmarks(frame, face['eye_landmarks'],
                                                                               colour=colour)
-                        if 'pitch' in face:
+                        if 'pitch' in face and 'yaw' in face and 'roll' in face:
                             text_origin = (int(math.floor(min(face['facial_landmarks'][:, 0]))),
                                            int(math.ceil(max(face['facial_landmarks'][:, 1]))) + 16)
                             cv2.putText(frame, "Pose: [%.1f, %.1f, %.1f]" % (face['pitch'], face['yaw'], face['roll']),
