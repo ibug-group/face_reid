@@ -12,7 +12,7 @@ A multi-face tracker that assigns each person an unique ID that is consistent th
 * Last but not least, don't forget to ***[download the model file](https://drive.google.com/open?id=1sLtsfu_Ry_l_3iN6goRtI3Jd_E-bhoVB)*** and save it in the [models folder](./models).
 
 ## How to Run the Demo
-Just run `python ibug_multi_face_reid_webcam_test.py 0` from your terminal, in which 0 means you are to use the first (#0) webcam connected to your machine. Other parameters are configured by [face_reidentifier_test.ini](./face_reidentifier_test.ini). Although this file contains many parameters, most should be kept to their default value. Nonetheless, the following entries can / should be tuned to suit your need:
+Just run `python face_reidentifier_test.py 0` from your terminal, in which 0 means you are to use the first (#0) webcam connected to your machine. Other parameters are configured by [face_reidentifier_test.ini](./face_reidentifier_test.ini). Although this file contains many parameters, most should be kept to their default value. Nonetheless, the following entries can / should be tuned to suit your need:
 * `cv2.VideoCapture/*`: Dimension of the images captured from the webcam.
 * `ibug.face_tracking.MultiFaceTracker/*`: Parameters controlling the [multi-face landmark tracker](https://github.com/IntelligentBehaviourUnderstandingGroup/face_tracking). Specifically, the following may need to be changed:
     - `ibug.face_tracking.MultiFaceTracker/ert_model_path` and `ibug.face_tracking.MultiFaceTracker/auxiliary_model_path`: Path of the model files.
