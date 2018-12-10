@@ -63,7 +63,6 @@ while True:
         
         # Perform face reidentification
         identities = reidentifier.reidentify_tracked_faces(frame, tracked_faces)
-        
         '''
         ibug.face_reid.FaceReidentifierEx.reidentify_tracked_faces
         
