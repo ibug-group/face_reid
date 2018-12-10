@@ -1,3 +1,4 @@
+import cv2
 import warnings
 from .misc import *
 import scipy.spatial.distance as sd
@@ -346,12 +347,14 @@ class FaceReidentifier(object):
 
 class FaceReidentifierEx(FaceReidentifier):
     def __init__(self, reidentification_interval=8, minimum_tracklet_length=6,
-                 face_margin=(0.225, 0.225, 0.225, 0.225), exclude_chin_points=True,
-                 equalise_histogram=True, normalised_face_size=224, *args, **kwargs):
+                 minimum_face_size=0.0, face_margin=(0.225, 0.225, 0.225, 0.225),
+                 exclude_chin_points=True, equalise_histogram=True,
+                 normalised_face_size=224, *args, **kwargs):
         super(FaceReidentifierEx, self).__init__(*args, **kwargs)
         self._reidentification_interval = max(1, int(reidentification_interval))
         self._minimum_tracklet_length = max(1, int(minimum_tracklet_length))
         assert len(face_margin) == 4
+        self._minimum_face_size = max(0.0, float(minimum_face_size))
         self._face_margin = face_margin
         self._exclude_chin_points = bool(exclude_chin_points)
         self._equalise_histogram = bool(equalise_histogram)
@@ -374,6 +377,14 @@ class FaceReidentifierEx(FaceReidentifier):
     @minimum_tracklet_length.setter
     def minimum_tracklet_length(self, value):
         self._minimum_tracklet_length = max(1, int(value))
+
+    @property
+    def minimum_face_size(self):
+        return self._minimum_face_size
+
+    @minimum_face_size.setter
+    def minimum_face_size(self, value):
+        self._minimum_face_size = max(0.0, float(value))
 
     @property
     def face_margin(self):
@@ -408,8 +419,102 @@ class FaceReidentifierEx(FaceReidentifier):
     def normalised_face_size(self, value):
         self._normalised_face_size = max(1, int(value))
 
-    def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False):
-        pass
+    def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False,
+                                 ignore_minimum_tracklet_length=False, ignore_quality=False):
+        # Update tracking context
+        for tracklet_id in self._tracking_context.keys():
+            self._tracking_context[tracklet_id]['tracked'] = False
+        for face in tracked_faces:
+            tracklet_id = face['id']
+
+            # Update tracklet length
+            if tracklet_id in self._tracking_context:
+                self._tracking_context[tracklet_id]['tracklet_length'] += 1
+            else:
+                self._tracking_context[tracklet_id] = {'tracklet_length': 1, 'face_id': 0}
+            self._tracking_context[tracklet_id]['tracked'] = True
+
+            # Extract face information
+            if 'face_image' in face:
+                self._tracking_context[tracklet_id]['face_image'] = face['face_image']
+            else:
+                self._tracking_context[tracklet_id]['face_image'] = None
+            if 'facial_landmarks' in face:
+                self._tracking_context[tracklet_id]['facial_landmarks'] = face['facial_landmarks']
+            else:
+                self._tracking_context[tracklet_id] = None
+            if 'roll' in face:
+                self._tracking_context[tracklet_id]['head_pose'] = (0.0, 0.0, face['roll'])
+            else:
+                self._tracking_context[tracklet_id]['head_pose'] = None
+            if 'quality' in face:
+                self._tracking_context[tracklet_id]['quality'] = face['quality']
+            else:
+                if ('facial_landmarks' in face and (
+                        face['facial_landmarks'][:, 0].min() <= 0.0 or
+                        face['facial_landmarks'][:, 1].min() <= 0.0 or
+                        face['facial_landmarks'][:, 0].max() >= frame.shape[1] or
+                        face['facial_landmarks'][:, 1].max() >= frame.shape[0] or
+                        max(face['facial_landmarks'][:, 0].max() - face['facial_landmarks'][:, 0].min(),
+                            face['facial_landmarks'][:, 1].max() - face['facial_landmarks'][:, 1].min()) <
+                        self._minimum_face_size)):
+                    self._tracking_context[tracklet_id]['quality'] = self.quality_threshold - 1.0
+                elif 'most_recent_fitting_scores' in face:
+                    self._tracking_context[tracklet_id]['quality'] = np.max(face['most_recent_fitting_scores'])
+                else:
+                    self._tracking_context[tracklet_id]['quality'] = self.quality_threshold
+        for tracklet_id in list(self._tracking_context.keys()):
+            if not self._tracking_context[tracklet_id]['tracked']:
+                del self._tracking_context[tracklet_id]
+
+        # Manage reidentification countdown
+        if self._reidentification_countdown > 0:
+            self._reidentification_countdown -= 1
+
+        # Reidentify the faces
+        if force_reidentification or self._reidentification_countdown <= 0:
+            self._reidentification_countdown = self._reidentification_interval
+            tracklets_to_be_identified = []
+            for tracklet_id in self._tracking_context.keys():
+                if (ignore_minimum_tracklet_length or
+                        self._tracking_context[tracklet_id]['tracklet_length'] >=
+                        self._minimum_tracklet_length):
+                    face_image = None
+                    if self._tracking_context[tracklet_id]['face_image'] is not None:
+                        if (face_image.shape[0] == self._normalised_face_size and
+                                face_image.shape[1] == self._normalised_face_size):
+                            face_image = self._tracking_context[tracklet_id]['face_image']
+                        else:
+                            face_image = cv2.resize(self._tracking_context[tracklet_id]['face_image'],
+                                                    (self._normalised_face_size, self._normalised_face_size))
+                    elif frame is not None and self._tracking_context[tracklet_id]['facial_landmarks'] is not None:
+                        face_image = extract_face_image(frame,
+                                                        self._tracking_context[tracklet_id]['facial_landmarks'],
+                                                        (self._normalised_face_size, self._normalised_face_size),
+                                                        self._face_margin,
+                                                        self._tracking_context[tracklet_id]['head_pose'],
+                                                        xclude_chin_points=self._exclude_chin_points)[0]
+                    if face_image is not None:
+                        if self._equalise_histogram:
+                            self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(face_image)
+                        else:
+                            self._tracking_context[tracklet_id]['face_image'] = face_image
+                        tracklets_to_be_identified.append(tracklet_id)
+            face_images = [self._tracking_context[x]['face_image'] for x in tracklets_to_be_identified]
+            if ignore_quality:
+                qualities = None
+            else:
+                qualities = [self._tracking_context[x]['quality'] for x in tracklets_to_be_identified]
+            face_ids = self.reidentify_faces(face_images, tracklets_to_be_identified, qualities)
+            for idx, tracklet_id in enumerate(tracklets_to_be_identified):
+                self._tracking_context[tracklet_id]['face_id'] = face_ids[idx]
+
+        # We are done
+        result = {}
+        for tracklet_id in self._tracking_context.keys():
+            result[tracklet_id] = {'face_id': self._tracking_context[tracklet_id]['face_id'],
+                                   'face_image': self._tracking_context[tracklet_id]['face_image']}
+        return result
 
     def reset(self, reset_reidentification_countdown=True, reset_face_id_counter=True):
         super(FaceReidentifierEx, self).reset(reset_face_id_counter)
