@@ -13,23 +13,23 @@ A multi-face tracker that assigns each person an unique ID that is consistent th
 ## How to Run the Demo
 Just run `python ibug_multi_face_reid_webcam_test.py 0` from your terminal, in which 0 means you are to use the first (#0) webcam connected to your machine. Other parameters are configured by [face_reidentifier_test.ini](./face_reidentifier_test.ini). Although this file contains many parameters, most should be kept to their default value. Nonetheless, the following entries can / should be tuned to suit your need:
 * `cv2.VideoCapture/*`: Dimension of the images captured from the webcam.
-* `ibug_face_tracker.MultiFaceTracker/*`: Parameters controlling the [multi-face landmark tracker](https://github.com/IntelligentBehaviourUnderstandingGroup/dlib_and_chehra_stuff). Specifically, the following may need to be changed:
-    * `ibug_face_tracker.MultiFaceTracker/repository_path`: Path of the tracker's repository. It could be left empty if the package is already made reachable to your Python interpreter.
-    * `ibug_face_tracker.MultiFaceTracker/ert_model_path` and `ibug_face_tracker.MultiFaceTracker/auxiliary_model_path`: Path of the model files.
-    * `ibug_face_tracker.MultiFaceTracker/faces_to_track`: The maximum number of faces to track at any given time.
-    * `ibug_face_tracker.MultiFaceTracker/minimum_face_size`: To avoid false positives, faces smaller than this will be ignored.
-* `face_reidentifier.FaceReidentifier/*`: Parameters controlling the face re-ID module, in which only the following should be tuned:
-    * `face_reidentifier.FaceReidentifier/database_capacity`: The maximum number of identities to be remembered by the re-ID module. If new identity appears after the database is full, the module will forget the identity which has not appear for the longest of time (not necessarily the oldest one) to make space for the new identity.
-    * `face_reidentifier.FaceReidentifier/gpu`: Index (>= 0) of the graphics card to use. If this parameter is left empty of if the designated card is unavailable, the code will fall back to run on CPU.
-* `tracking_context/*`: Parameters concerning tracklet management:
-    * `tracking_context/face_reidentification_interval`: Face reidentification will be performed only once per this number of frames. This is not only to reduce computational workload but also to avoid storing descriptors that are almost identical to each other. For the frames on which face reidentification is not performed, the face ID is propagated through tracklet continuity.
-    * `tracking_context/minimum_tracking_length`: Face reidentification will only be performed on faces that have been continuously tracked for at least this number of frames. This is inline with the ghost elimination approach described in [\[1\]](https://ibug.doc.ic.ac.uk/media/uploads/documents/a_real-time_and_unsupervised_face_re-identification_system_for_human-robot_interaction.pdf).
+* `ibug.face_tracking.MultiFaceTracker/*`: Parameters controlling the [multi-face landmark tracker](https://github.com/IntelligentBehaviourUnderstandingGroup/face_tracking). Specifically, the following may need to be changed:
+    - `ibug.face_tracking.MultiFaceTracker/ert_model_path` and `ibug.face_tracking.MultiFaceTracker/auxiliary_model_path`: Path of the model files.
+    - `ibug.face_tracking.MultiFaceTracker/faces_to_track`: The maximum number of faces to track at any given time.
+    - `ibug.face_tracking.MultiFaceTracker/minimum_face_size`: To avoid false positives, faces smaller than this will be ignored.
+* `ibug.face_reid.FaceReidentifierEx/*`: Parameters controlling the face re-ID module, in which the following may be tuned:
+    - `ibug.face_reid.FaceReidentifierEx/database_capacity`: The maximum number of identities to be remembered by the re-ID module. If new identity appears after the database is full, the module will forget the identity which has not appear for the longest of time (not necessarily the oldest one) to make space for the new identity.
+    - `ibug.face_reid.FaceReidentifierEx/gpu`: Index (>= 0) of the graphics card to use. If this parameter is left empty of if the designated card is unavailable, the code will fall back to run on CPU.
+    - `ibug.face_reid.FaceReidentifierEx/reidentification_interval`: Face reidentification will be performed only once per this number of frames. This is not only to reduce computational workload but also to avoid storing descriptors that are almost identical to each other. For the frames on which face reidentification is not performed, the face ID is propagated through tracklet continuity.
+    - `ibug.face_reid.FaceReidentifierEx/minimum_tracklet_length`: Face reidentification will only be performed on faces that have been continuously tracked for at least this number of frames. This is inline with the ghost elimination approach described in [\[1\]](https://ibug.doc.ic.ac.uk/media/uploads/documents/a_real-time_and_unsupervised_face_re-identification_system_for_human-robot_interaction.pdf).
 
 ## How to Install the Python Package
 * To install: `python setup.py install`
 * To uninstall: `pip uninstall ibug_face_reid`
 
 ## How to Use the Python Package
+You can either use `ibug.face_reid.FaceReidentifier` or the `ibug.face_reid.FaceReidentifierEx` for
+
 Please refer to the code in [face_reidentifier_test.py](./face_reidentifier_test.py) about how to use the face reidentification module in your own project. Please take note on how tracking context is managed as it influences the face reidentification result but is yet to be integrated into the module. This coupling issue will be addressed in a future update.
 
 If you choose to use a different facial landmark tracker, you may also need to write some code to produce tracklet information, head pose and fitting score. For tracklet information, a simple association technique based on intersection-over-union (IoU) score [\[2\]](http://openaccess.thecvf.com/content_ICCV_2017/papers/Jin_End-To-End_Face_Detection_ICCV_2017_paper.pdf) works quite well in practice. The latter two (head pose and fitting score) are not absolutely necessary, but will help nonetheless to reduce false positives when they are made available to the reidentification module. For head pose, a rigid registration through similarity transform would be sufficient. For fitting score, any confidence measure, heuristics, or a combination of both, can be used.
