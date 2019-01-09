@@ -69,7 +69,7 @@ while True:
         * tracked_faces: a list of dictionaries, each containing the following:
             * id: tracklet ID of the face, must be unique, preferably non-negative.
             * facial_landmarks: facial landmarks for face image extraction.
-            * [optional] roll: face roll (in degrees) to help face image extraction.
+            * [optional] roll: face roll (in degrees) to assist face image extraction.
             * [optional] face_image: extracted face image. All other fields would be
               ignored if the face image is provided.
         * use_bgr_colour_model: Set this to True (the default value) if the frame is
