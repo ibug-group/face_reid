@@ -420,7 +420,8 @@ class FaceReidentifierEx(FaceReidentifier):
         self._normalised_face_size = max(1, int(value))
 
     def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False,
-                                 ignore_minimum_tracklet_length=False, ignore_quality=False):
+                                 ignore_minimum_tracklet_length=False, ignore_quality=False,
+                                 use_bgr_colour_model=True):
         # Update tracking context
         for tracklet_id in self._tracking_context.keys():
             self._tracking_context[tracklet_id]['tracked'] = False
@@ -494,7 +495,8 @@ class FaceReidentifierEx(FaceReidentifier):
                                                         exclude_chin_points=self._exclude_chin_points)[0]
                     if face_image is not None:
                         if self._equalise_histogram:
-                            self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(face_image)
+                            self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(
+                                face_image, use_bgr_colour_model=use_bgr_colour_model)
                         else:
                             self._tracking_context[tracklet_id]['face_image'] = face_image
                         tracklets_to_be_identified.append(tracklet_id)
@@ -503,7 +505,8 @@ class FaceReidentifierEx(FaceReidentifier):
                 qualities = None
             else:
                 qualities = [self._tracking_context[x]['quality'] for x in tracklets_to_be_identified]
-            face_ids = self.reidentify_faces(face_images, tracklets_to_be_identified, qualities)
+            face_ids = self.reidentify_faces(face_images, tracklets_to_be_identified, qualities,
+                                             use_bgr_colour_model=use_bgr_colour_model)
             for idx, tracklet_id in enumerate(tracklets_to_be_identified):
                 self._tracking_context[tracklet_id]['face_id'] = face_ids[idx]
 

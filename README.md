@@ -3,8 +3,6 @@ A multi-face tracker that assigns each person an unique ID that is consistent th
 1. [ibug.face_reid](./ibug/face_reid): The Python package for face reidentification.
 2. [face_reidentifier_test.py](./face_reidentifier_test.py): A demonstration of the face reidentification package on live video captured by webcam.
 
-[![Face Re-ID Demo](https://img.youtube.com/vi/DZ4XFO-56ww/0.jpg)](https://www.youtube.com/watch?v=DZ4XFO-56ww "Face Re-ID Demo")
-
 ## Dependencies
 * [PyTorch](https://pytorch.org/) (`conda install pytorch torchvision -c pytorch`) with [CUDA](https://developer.nvidia.com/cuda-90-download-archive) and [cuDNN](https://developer.nvidia.com/cudnn) (though ***you don't need to manually install the latter two***). The code has been developed for ***Python 3.5*** on a ***Ubuntu*** machine with ***PyTorch 0.4.1*** and ***CUDA 9.0***. However, it will also works in Python 2.7, on a Windows (7/8/10) machine, and / or with other (newer) versions of the aforementioned libraries as long as they are compatible with each other.
 * [OpenCV](https://opencv.org/) (`pip install opencv-python`), [numpy](http://www.numpy.org/) (`pip install numpy`), and [scipy](https://www.scipy.org/) (`pip install scipy`).
@@ -70,10 +68,12 @@ while True:
         * frame: could be None if you choose to provide the extracted face images.
         * tracked_faces: a list of dictionaries, each containing the following:
             * id: tracklet ID of the face, must be unique, preferably non-negative.
-            * face_image: extracted face image. All other fields would be ignored 
-              if the face image is provided.
             * facial_landmarks: facial landmarks for face image extraction.
             * [optional] roll: face roll (in degrees) to help face image extraction.
+            * [optional] face_image: extracted face image. All other fields would be
+              ignored if the face image is provided.
+        * use_bgr_colour_model: Set this to True (the default value) if the frame is
+          coming from OpenCV or False if otherwise.
 
         Output:
         A dictionary with tracklet IDs as keys. Each value consists of a dictionary  
