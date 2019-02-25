@@ -1,16 +1,15 @@
-import cv2
 import warnings
 from .misc import *
 import scipy.spatial.distance as sd
 from collections import OrderedDict
 from scipy.optimize import linear_sum_assignment
-from copy import deepcopy
 
 
 class FaceReidentifier(object):
     def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
-                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean', model=None, gpu=None):
+                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
+                 face_image_size=224, model=None, gpu=None):
         if len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
@@ -31,6 +30,11 @@ class FaceReidentifier(object):
                 self._device = torch.device('cpu')
                 self._model = model.to(self._device)
         self._model.eval()
+        try:
+            self._model = torch.jit.trace(self._model, torch.rand(1, 3, max(1, int(face_image_size)),
+                                                                  max(1, int(face_image_size))).to(self._device))
+        except:
+            pass
         self._distance_threshold = max(0.0, distance_threshold)
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._quality_threshold = quality_threshold
@@ -350,7 +354,7 @@ class FaceReidentifierEx(FaceReidentifier):
                  minimum_face_size=0.0, face_margin=(0.225, 0.225, 0.225, 0.225),
                  exclude_chin_points=True, equalise_histogram=True,
                  normalised_face_size=224, *args, **kwargs):
-        super(FaceReidentifierEx, self).__init__(*args, **kwargs)
+        super(FaceReidentifierEx, self).__init__(face_image_size=normalised_face_size, *args, **kwargs)
         self._reidentification_interval = max(1, int(reidentification_interval))
         self._minimum_tracklet_length = max(1, int(minimum_tracklet_length))
         self._minimum_face_size = max(0.0, float(minimum_face_size))
