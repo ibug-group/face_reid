@@ -9,7 +9,7 @@ class FaceReidentifier(object):
     def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
-                 face_image_size=224, model=None, gpu=None):
+                 face_image_size=224, normalise_face_descriptor=True, model=None, gpu=None):
         if len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
@@ -30,11 +30,12 @@ class FaceReidentifier(object):
                 self._device = torch.device('cpu')
                 self._model = model.to(self._device)
         self._model.eval()
-        try:
-            self._model = torch.jit.trace(self._model, torch.rand(1, 3, max(1, int(face_image_size)),
-                                                                  max(1, int(face_image_size))).to(self._device))
-        except:
-            pass
+        if face_image_size > 0:
+            try:
+                self._model = torch.jit.trace(self._model, torch.rand(1, 3, max(1, int(face_image_size)),
+                                                                      max(1, int(face_image_size))).to(self._device))
+            except:
+                pass
         self._distance_threshold = max(0.0, distance_threshold)
         self._neighbour_count_threshold = max(1, int(neighbour_count_threshold))
         self._quality_threshold = quality_threshold
@@ -44,6 +45,7 @@ class FaceReidentifier(object):
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
         self._distance_metric = distance_metric
+        self._normalise_face_descriptor = normalise_face_descriptor
         self._database = OrderedDict()
         self._unidentified_tracklets = OrderedDict()
         self._exisiting_tracklet_ids = set()
@@ -127,6 +129,14 @@ class FaceReidentifier(object):
         self._distance_metric = value
 
     @property
+    def normalise_face_descriptor(self):
+        return self._normalise_face_descriptor
+
+    @normalise_face_descriptor.setter
+    def normalise_face_descriptor(self, value):
+        self._normalise_face_descriptor = bool(value)
+
+    @property
     def gpu(self):
         return self._gpu
 
@@ -186,8 +196,9 @@ class FaceReidentifier(object):
             face_descriptors = self._model(face_images).detach().numpy()
         else:
             face_descriptors = self._model(face_images.to(self._device)).detach().cpu().numpy()
-        for face_descriptor in face_descriptors:
-            face_descriptor /= max(np.finfo(np.float).eps, np.linalg.norm(face_descriptor))
+        if self._normalise_face_descriptor:
+            for face_descriptor in face_descriptors:
+                face_descriptor /= max(np.finfo(np.float).eps, np.linalg.norm(face_descriptor))
         return list(face_descriptors)
 
     def _update_identity(self, identity, face_descriptors, tracklet_id):
@@ -447,7 +458,7 @@ class FaceReidentifierEx(FaceReidentifier):
             if 'facial_landmarks' in face:
                 self._tracking_context[tracklet_id]['facial_landmarks'] = face['facial_landmarks']
             else:
-                self._tracking_context[tracklet_id] = None
+                self._tracking_context[tracklet_id]['facial_landmarks'] = None
             if 'roll' in face:
                 self._tracking_context[tracklet_id]['head_pose'] = (0.0, 0.0, face['roll'])
             else:
