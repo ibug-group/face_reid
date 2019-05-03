@@ -1,4 +1,4 @@
-# The Face Re-ID Package and Demonstrator
+# face_reid
 A multi-face tracker that assigns each person an unique ID that is consistent through time so that we can keep track of the person's identity when she / he is moving in and out of the camera's field of view. The algorithm is loosely based on our previous work [\[1\]](https://ibug.doc.ic.ac.uk/media/uploads/documents/a_real-time_and_unsupervised_face_re-identification_system_for_human-robot_interaction.pdf) but with a different, more pragmatic clustering approach that takes tracklet information, head pose, and fitting score into consideration so as to improve reidentification accuracy on live videos, especially when multiple people are in the scene. The following are included in this repository:
 1. [ibug.face_reid](./ibug/face_reid): The Python package for face reidentification.
 2. [face_reidentifier_test.py](./face_reidentifier_test.py): A demonstration of the face reidentification package on live video captured by webcam.
