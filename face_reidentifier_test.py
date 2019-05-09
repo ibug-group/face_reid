@@ -127,8 +127,8 @@ def main():
                                                              "exclude_chin_points", fallback=True)
         reidentifier.equalise_histogram = config.getboolean(reidentifier_section_name,
                                                             "equalise_histogram", fallback=True)
-        reidentifier.normalised_face_size = config.getint(reidentifier_section_name,
-                                                          "normalised_face_size", fallback=224)
+        reidentifier.normalised_face_size = eval(config.get(reidentifier_section_name,
+                                                            "normalised_face_size", fallback="224"))
         reidentifier.reidentification_interval = config.getint(reidentifier_section_name,
                                                                "reidentification_interval", fallback=8)
         reidentifier.minimum_tracklet_length = config.getint(reidentifier_section_name,
@@ -154,7 +154,7 @@ def main():
                                                             reidentifier.face_margin[3]) +
               "\nexclude_chin_points = %r" % reidentifier.exclude_chin_points +
               "\nequalise_histogram = %r" % reidentifier.equalise_histogram +
-              "\nnormalised_face_size = %d" % reidentifier.normalised_face_size +
+              "\nnormalised_face_size = %s" % (reidentifier.normalised_face_size, ) +
               "\nreidentification_interval = %d" % reidentifier.reidentification_interval +
               "\nminimum_tracklet_length = %d" % reidentifier.minimum_tracklet_length +
               "\nminimum_face_size = %.6f" % reidentifier.minimum_face_size)

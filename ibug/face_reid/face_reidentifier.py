@@ -30,10 +30,17 @@ class FaceReidentifier(object):
                 self._device = torch.device('cpu')
                 self._model = model.to(self._device)
         self._model.eval()
-        if face_image_size > 0:
+        if isinstance(face_image_size, tuple) or isinstance(face_image_size, list):
+            face_image_width = int(face_image_size[0])
+            face_image_height = int(face_image_size[1])
+        else:
+            face_image_width = face_image_height = int(face_image_size)
+        if face_image_width > 0 and face_image_height > 0:
             try:
-                self._model = torch.jit.trace(self._model, torch.rand(1, 3, max(1, int(face_image_size)),
-                                                                      max(1, int(face_image_size))).to(self._device))
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    self._model = torch.jit.trace(self._model, torch.rand(1, 3, face_image_height,
+                                                                          face_image_width).to(self._device))
             except:
                 pass
         self._distance_threshold = max(0.0, distance_threshold)
@@ -373,7 +380,12 @@ class FaceReidentifierEx(FaceReidentifier):
         self._face_margin = face_margin
         self._exclude_chin_points = bool(exclude_chin_points)
         self._equalise_histogram = bool(equalise_histogram)
-        self._normalised_face_size = max(1, int(normalised_face_size))
+        if isinstance(normalised_face_size, tuple):
+            self._normalised_face_size = tuple([int(x) for x in normalised_face_size])
+        elif isinstance(normalised_face_size, list):
+            self._normalised_face_size = [int(x) for x in normalised_face_size]
+        else:
+            self._normalised_face_size = int(normalised_face_size)
         self._tracking_context = {}
         self._reidentification_countdown = self._reidentification_interval
 
@@ -432,7 +444,12 @@ class FaceReidentifierEx(FaceReidentifier):
 
     @normalised_face_size.setter
     def normalised_face_size(self, value):
-        self._normalised_face_size = max(1, int(value))
+        if isinstance(value, tuple):
+            self._normalised_face_size = tuple([int(x) for x in value])
+        elif isinstance(value, list):
+            self._normalised_face_size = [int(x) for x in value]
+        else:
+            self._normalised_face_size = int(value)
 
     def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False,
                                  ignore_minimum_tracklet_length=False, ignore_quality=False,
@@ -491,20 +508,26 @@ class FaceReidentifierEx(FaceReidentifier):
         if force_reidentification or self._reidentification_countdown <= 0:
             self._reidentification_countdown = self._reidentification_interval
             tracklets_to_be_identified = []
+            if isinstance(self._normalised_face_size, tuple) or isinstance(self._normalised_face_size, list):
+                normalised_image_width = int(self._normalised_face_size[0])
+                normalised_image_height = int(self._normalised_face_size[1])
+            else:
+                normalised_image_width = normalised_image_height = int(self._normalised_face_size)
             for tracklet_id in self._tracking_context.keys():
                 if (ignore_minimum_tracklet_length or
                         self._tracking_context[tracklet_id]['tracklet_length'] >=
                         self._minimum_tracklet_length):
                     face_image = self._tracking_context[tracklet_id]['face_image']
                     if face_image is not None:
-                        if (face_image.shape[0] != self._normalised_face_size or
-                                face_image.shape[1] != self._normalised_face_size):
-                            face_image = cv2.resize(face_image, (self._normalised_face_size,
-                                                                 self._normalised_face_size))
+                        if (normalised_image_width > 0 and normalised_image_height > 0 and
+                                (face_image.shape[1] != normalised_image_width or
+                                 face_image.shape[0] != normalised_image_height)):
+                            face_image = cv2.resize(face_image, (normalised_image_width,
+                                                                 normalised_image_height))
                     elif frame is not None and self._tracking_context[tracklet_id]['facial_landmarks'] is not None:
                         face_image = extract_face_image(frame,
                                                         self._tracking_context[tracklet_id]['facial_landmarks'],
-                                                        (self._normalised_face_size, self._normalised_face_size),
+                                                        (normalised_image_width, normalised_image_height),
                                                         self._face_margin,
                                                         self._tracking_context[tracklet_id]['head_pose'],
                                                         exclude_chin_points=self._exclude_chin_points)[0]
