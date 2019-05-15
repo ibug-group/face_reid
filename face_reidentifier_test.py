@@ -2,6 +2,7 @@ import os
 import cv2
 import sys
 import math
+import torch
 import numpy as np
 import ibug.face_reid
 import ibug.face_tracking
@@ -9,14 +10,6 @@ try:
     from configparser import ConfigParser
 except ImportError:
     from ConfigParser import ConfigParser
-
-
-def read_path(config, working_folder, section, key):
-    path = config.get(section, key).replace('\'', '').replace('\"', '')
-    if os.path.isabs(path):
-        return path
-    else:
-        return os.path.realpath(os.path.join(working_folder, path))
 
 
 def main():
@@ -31,20 +24,22 @@ def main():
             config_file = sys.argv[2]
         config_folder = os.path.dirname(config_file)
 
+        # Make the models run a bit faster
+        torch.backends.cudnn.benchmark = True
+
         # Parse the INI file
         config = ConfigParser()
         config.read(config_file)
 
         # Create the multi-face tracker
         tracker_section_name = "ibug.face_tracking.MultiFaceTracker"
-        ert_model_path = read_path(config, config_folder, tracker_section_name, "ert_model_path")
-        auxiliary_model_path = read_path(config, config_folder, tracker_section_name, "auxiliary_model_path")
         faces_to_track = config.getint(tracker_section_name, "faces_to_track", fallback=1)
+        ert_model_file = config.get(tracker_section_name, "ert_model_file",
+                                    fallback="new3_68_pts_UAD_1_tr_6_cas_15.dat")
         print("Creating multi-face tracker with the following parameters...\n"
-              "ert_model_path = \"" + ert_model_path + "\"\n"
-              "auxiliary_model_path = \"" + auxiliary_model_path + "\"\n"
-              "faces_to_track = %d" % faces_to_track)
-        tracker = ibug.face_tracking.MultiFaceTracker(ert_model_path, auxiliary_model_path, faces_to_track)
+              "faces_to_track = %d" % faces_to_track + "\n"
+              "ert_model_file = %s" % ert_model_file)
+        tracker = ibug.face_tracking.MultiFaceTracker(faces_to_track, ert_model_file)
         print("Multi-face tracker created.")
 
         # Configure the tracker
@@ -83,18 +78,11 @@ def main():
 
         # Create the face reidentifier
         reidentifier_section_name = "ibug.face_reid.FaceReidentifierEx"
-        vgg_model_path = read_path(config, config_folder, reidentifier_section_name, "model_path")
-        try:
-            gpu = config.getint(reidentifier_section_name, "gpu")
-        except:
-            gpu = None
+        gpu = config.get(reidentifier_section_name, "gpu", fallback="None")
         print("\nCreating face reidentifier with the following parameter...\n"
-              "model_path = \"" + vgg_model_path + "\"")
-        if gpu is None:
-            print("gpu = None")
-        else:
-            print("gpu = %d" % gpu)
-        reidentifier = ibug.face_reid.FaceReidentifierEx(model_path=vgg_model_path, gpu=gpu)
+              "gpu = %s" % gpu)
+        gpu = eval(gpu)
+        reidentifier = ibug.face_reid.FaceReidentifierEx(gpu=gpu)
         if gpu is None or reidentifier.gpu == gpu:
             print("Face reidentifier created.")
         else:

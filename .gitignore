@@ -1,4 +1,4 @@
-models/*.pt
+ibug/face_reid/models/*.pt
 .idea
 *.pyc
 build

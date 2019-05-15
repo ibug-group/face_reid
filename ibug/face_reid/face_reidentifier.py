@@ -1,3 +1,4 @@
+import os
 import warnings
 from .misc import *
 import scipy.spatial.distance as sd
@@ -6,11 +7,13 @@ from scipy.optimize import linear_sum_assignment
 
 
 class FaceReidentifier(object):
-    def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
+    def __init__(self, model_path=os.path.realpath(os.path.join(os.path.dirname(__file__), 'models',
+                                                                'vggface16_pytorch_weights.pt')),
+                 distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
                  face_image_size=224, normalise_face_descriptor=True, model=None, gpu=None):
-        if len(model_path) > 0:
+        if model is None and len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
         try:
