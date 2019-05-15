@@ -13,7 +13,7 @@ class FaceReidentifier(object):
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
                  face_image_size=224, normalise_face_descriptor=True, model=None, gpu=None):
-        if model is None and len(model_path) > 0:
+        if model is None and model_path is not None and len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
         try:
