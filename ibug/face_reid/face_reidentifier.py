@@ -11,8 +11,9 @@ class FaceReidentifier(object):
                                                                 'vggface16_pytorch_weights.pt')),
                  distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
-                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
-                 face_image_size=224, normalise_face_descriptor=True, model=None, gpu=None):
+                 mean_rgb=(129.1863, 104.7624, 93.5940), std_rgb=(1.0, 1.0, 1.0),
+                 distance_metric='euclidean', face_image_size=224, normalise_face_descriptor=True,
+                 model_rgb_channel_order=True, model=None, gpu=None):
         if model is None and model_path is not None and len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
@@ -54,8 +55,11 @@ class FaceReidentifier(object):
         self._descriptor_update_rate = max(0.0, min(descriptor_update_rate, 1.0))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
+        assert len(std_rgb) == 3
+        self._std_rgb = std_rgb
         self._distance_metric = distance_metric
         self._normalise_face_descriptor = normalise_face_descriptor
+        self._model_rgb_channel_order = model_rgb_channel_order
         self._database = OrderedDict()
         self._unidentified_tracklets = OrderedDict()
         self._exisiting_tracklet_ids = set()
@@ -131,6 +135,15 @@ class FaceReidentifier(object):
         self._mean_rgb = value
 
     @property
+    def std_rgb(self):
+        return self._std_rgb
+
+    @std_rgb.setter
+    def std_rgb(self, value):
+        assert len(value) == 3
+        self._std_rgb = value
+
+    @property
     def distance_metric(self):
         return self._distance_metric
 
@@ -144,6 +157,14 @@ class FaceReidentifier(object):
 
     @normalise_face_descriptor.setter
     def normalise_face_descriptor(self, value):
+        self._normalise_face_descriptor = bool(value)
+
+    @property
+    def model_rgb_channel_order(self):
+        return self._model_rgb_channel_order
+
+    @model_rgb_channel_order.setter
+    def model_rgb_channel_order(self, value):
         self._normalise_face_descriptor = bool(value)
 
     @property
@@ -193,14 +214,17 @@ class FaceReidentifier(object):
         face_images = np.array(face_images).astype(np.float32)
         for face_image in face_images:
             if use_bgr_colour_model:
-                face_image[..., 2] -= self._mean_rgb[0]
-                face_image[..., 1] -= self._mean_rgb[1]
-                face_image[..., 0] -= self._mean_rgb[2]
-                face_image[...] = face_image[..., ::-1]
+                face_image[..., 2] = (face_image[..., 2] - self._mean_rgb[0]) / self._std_rgb[0]
+                face_image[..., 1] = (face_image[..., 1] - self._mean_rgb[1]) / self._std_rgb[1]
+                face_image[..., 0] = (face_image[..., 0] - self._mean_rgb[2]) / self._std_rgb[2]
+                if self._model_rgb_channel_order:
+                    face_image[...] = face_image[..., ::-1]
             else:
-                face_image[..., 0] -= self._mean_rgb[0]
-                face_image[..., 1] -= self._mean_rgb[1]
-                face_image[..., 2] -= self._mean_rgb[2]
+                face_image[..., 0] = (face_image[..., 0] - self._mean_rgb[0]) / self._std_rgb[0]
+                face_image[..., 1] = (face_image[..., 1] - self._mean_rgb[1]) / self._std_rgb[1]
+                face_image[..., 2] = (face_image[..., 2] - self._mean_rgb[2]) / self._std_rgb[2]
+                if self._model_rgb_channel_order:
+                    face_image[...] = face_image[..., ::-1]
         face_images = torch.from_numpy(face_images.transpose([0, 3, 1, 2]))
         if self._device.type == 'cpu':
             face_descriptors = self._model(face_images).detach().numpy()
