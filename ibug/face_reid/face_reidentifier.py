@@ -165,7 +165,7 @@ class FaceReidentifier(object):
 
     @model_rgb_channel_order.setter
     def model_rgb_channel_order(self, value):
-        self._normalise_face_descriptor = bool(value)
+        self._model_rgb_channel_order = bool(value)
 
     @property
     def gpu(self):
@@ -223,7 +223,7 @@ class FaceReidentifier(object):
                 face_image[..., 0] = (face_image[..., 0] - self._mean_rgb[0]) / self._std_rgb[0]
                 face_image[..., 1] = (face_image[..., 1] - self._mean_rgb[1]) / self._std_rgb[1]
                 face_image[..., 2] = (face_image[..., 2] - self._mean_rgb[2]) / self._std_rgb[2]
-                if self._model_rgb_channel_order:
+                if not self._model_rgb_channel_order:
                     face_image[...] = face_image[..., ::-1]
         face_images = torch.from_numpy(face_images.transpose([0, 3, 1, 2]))
         if self._device.type == 'cpu':
