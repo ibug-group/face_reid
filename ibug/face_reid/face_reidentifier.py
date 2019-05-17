@@ -58,8 +58,8 @@ class FaceReidentifier(object):
         assert len(std_rgb) == 3
         self._std_rgb = std_rgb
         self._distance_metric = distance_metric
-        self._normalise_face_descriptor = normalise_face_descriptor
-        self._model_rgb_channel_order = model_rgb_channel_order
+        self._normalise_face_descriptor = bool(normalise_face_descriptor)
+        self._model_rgb_channel_order = bool(model_rgb_channel_order)
         self._database = OrderedDict()
         self._unidentified_tracklets = OrderedDict()
         self._exisiting_tracklet_ids = set()
@@ -397,7 +397,8 @@ class FaceReidentifier(object):
 class FaceReidentifierEx(FaceReidentifier):
     def __init__(self, reidentification_interval=8, minimum_tracklet_length=6,
                  minimum_face_size=0.0, face_margin=(0.225, 0.225, 0.225, 0.225),
-                 exclude_chin_points=True, equalise_histogram=True,
+                 exclude_chin_points=True, margin_dim=0, crop_square=True,
+                 interpolation=cv2.INTER_LINEAR, equalise_histogram=True,
                  normalised_face_size=224, *args, **kwargs):
         super(FaceReidentifierEx, self).__init__(face_image_size=normalised_face_size, *args, **kwargs)
         self._reidentification_interval = max(1, int(reidentification_interval))
@@ -406,6 +407,9 @@ class FaceReidentifierEx(FaceReidentifier):
         assert len(face_margin) == 4
         self._face_margin = face_margin
         self._exclude_chin_points = bool(exclude_chin_points)
+        self._margin_dim = margin_dim
+        self._crop_square = bool(crop_square)
+        self._interpolation = interpolation
         self._equalise_histogram = bool(equalise_histogram)
         if isinstance(normalised_face_size, tuple):
             self._normalised_face_size = tuple([int(x) for x in normalised_face_size])
@@ -456,6 +460,30 @@ class FaceReidentifierEx(FaceReidentifier):
     @exclude_chin_points.setter
     def exclude_chin_points(self, value):
         self._exclude_chin_points = bool(value)
+
+    @property
+    def margin_dim(self):
+        return self._margin_dim
+
+    @margin_dim.setter
+    def margin_dim(self, value):
+        self._margin_dim = value
+
+    @property
+    def crop_square(self):
+        return self._crop_square
+
+    @crop_square.setter
+    def crop_square(self, value):
+        self._crop_square = bool(value)
+
+    @property
+    def interpolation(self):
+        return self._interpolation
+
+    @interpolation.setter
+    def interpolation(self, value):
+        self._interpolation = value
 
     @property
     def equalise_histogram(self):
@@ -557,7 +585,10 @@ class FaceReidentifierEx(FaceReidentifier):
                                                         (normalised_image_width, normalised_image_height),
                                                         self._face_margin,
                                                         self._tracking_context[tracklet_id]['head_pose'],
-                                                        exclude_chin_points=self._exclude_chin_points)[0]
+                                                        exclude_chin_points=self._exclude_chin_points,
+                                                        margin_dim=self._margin_dim,
+                                                        crop_square=self._crop_square,
+                                                        interpolation=self._interpolation)[0]
                     if face_image is not None:
                         if self._equalise_histogram:
                             self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(
