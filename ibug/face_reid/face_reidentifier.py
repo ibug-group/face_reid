@@ -324,7 +324,7 @@ class FaceReidentifier(object):
                     saved_face_descriptors += self._database[saved_face_id]['descriptors']
                     saved_face_id_list += [saved_face_id] * len(self._database[saved_face_id]['descriptors'])
                 distances = sd.cdist(remaining_face_descriptors, saved_face_descriptors, metric=self.distance_metric)
-                max_distance = np.amax(distances)
+                pseudo_max_distance = max(np.amax(distances), 1.0)
 
                 # Now compute similarities between new descriptors and existing identities
                 similarities = -np.ones((len(remaining_face_descriptors), len(saved_face_ids)), dtype=np.float)
@@ -337,7 +337,7 @@ class FaceReidentifier(object):
                             saved_face_id = neighbour_face_ids[idx2]
                             saved_face_idx = saved_face_ids.index(saved_face_id)
                             similarities[idx, saved_face_idx] = \
-                                (counts[idx2] * 2 + 1) * max_distance - np.min(
+                                (counts[idx2] * 2 + 1) * pseudo_max_distance - np.min(
                                     [distances[idx, x2] for x2 in [x for x in neighbours if
                                                                    saved_face_id_list[x] == saved_face_id]])
 
@@ -358,8 +358,9 @@ class FaceReidentifier(object):
                                      saved_tracklets[conflict[0]]] = -1.0
 
                 # Assign descriptors to existing identities
-                similarities[similarities < 0.0] *= (similarities.shape[0] * similarities.shape[1] *
-                                                     np.amax(similarities)) ** 2
+                max_similarity = np.amax(similarities)
+                if max_similarity >= 0.0:
+                    similarities[similarities < 0.0] *= (2.0 * max_similarity + 1.0) * min(similarities.shape)
                 rows, cols = linear_sum_assignment(-similarities)
                 associations = []
                 for [idx1, idx2] in np.vstack((rows, cols)).T:
