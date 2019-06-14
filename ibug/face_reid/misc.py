@@ -82,7 +82,7 @@ def load_vgg_face_16_feature_extractor(weights_path):
     return model
 
 
-def get_face_box(landmarks, margin=(0.0, 0.0, 0.0, 0.0), exclude_chin_points=False):
+def get_face_box(landmarks, margin=(0.0, 0.0, 0.0, 0.0), exclude_chin_points=False, margin_dim=0, make_square=True):
     # Get bounding box
     if exclude_chin_points and landmarks.shape[0] == 68:
         top_left = np.min(landmarks[17:], axis=0)
@@ -91,27 +91,32 @@ def get_face_box(landmarks, margin=(0.0, 0.0, 0.0, 0.0), exclude_chin_points=Fal
         top_left = np.min(landmarks, axis=0)
         bottom_right = np.max(landmarks, axis=0)
     face_size = bottom_right - top_left
+    if margin_dim < 0:
+        face_size[:] = face_size.min()
+    elif margin_dim > 0:
+        face_size[:] = face_size.max()
     top_left[0] = np.floor(top_left[0] - face_size[0] * margin[0])
     top_left[1] = np.floor(top_left[1] - face_size[1] * margin[1])
     bottom_right[0] = np.ceil(bottom_right[0] + face_size[0] * margin[2])
     bottom_right[1] = np.ceil(bottom_right[1] + face_size[1] * margin[3])
 
     # Make face box square
-    difference = (bottom_right[1] - top_left[1] + 1) - (bottom_right[0] - top_left[0] + 1)
-    if difference > 0:
-        top_left[0] -= difference // 2
-        bottom_right[0] += difference - difference // 2
-    elif difference < 0:
-        difference = -difference
-        top_left[1] -= difference // 2
-        bottom_right[1] += difference - difference // 2
+    if make_square:
+        difference = (bottom_right[1] - top_left[1] + 1) - (bottom_right[0] - top_left[0] + 1)
+        if difference > 0:
+            top_left[0] -= difference // 2
+            bottom_right[0] += difference - difference // 2
+        elif difference < 0:
+            difference = -difference
+            top_left[1] -= difference // 2
+            bottom_right[1] += difference - difference // 2
 
     return top_left, bottom_right
 
 
-def extract_face_image(image, landmarks, target_size, margin, head_pose=None,
-                       eye_points=None, exclude_chin_points=False,
-                       interpolation=cv2.INTER_CUBIC):
+def extract_face_image(image, landmarks, target_size, margin, head_pose=None, eye_points=None,
+                       exclude_chin_points=False, margin_dim=0, crop_square=True,
+                       interpolation=cv2.INTER_LINEAR):
     # First, see whether we have head pose
     if head_pose is not None and len(head_pose) >= 3:
         roll = head_pose[2]
@@ -122,17 +127,17 @@ def extract_face_image(image, landmarks, target_size, margin, head_pose=None,
     if margin is None:
         margin = (0.0, 0.0, 0.0, 0.0)
     if roll is None:
-        top_left, bottom_right = get_face_box(landmarks, margin, exclude_chin_points)
+        top_left, bottom_right = get_face_box(landmarks, margin, exclude_chin_points, margin_dim, crop_square)
     else:
         rotated_landmarks = cv2.getRotationMatrix2D((0, 0), roll, 1.0).dot(
             np.vstack((landmarks.T, np.ones(landmarks.shape[0])))).T
-        top_left, bottom_right = get_face_box(rotated_landmarks, margin, exclude_chin_points)
+        top_left, bottom_right = get_face_box(rotated_landmarks, margin, exclude_chin_points, margin_dim, crop_square)
         corners = np.array([[top_left[0], top_left[1], 1],
                             [bottom_right[0], top_left[1], 1],
                             [bottom_right[0], bottom_right[1], 1],
                             [top_left[0], bottom_right[1], 1]])
-        top_left, bottom_right = get_face_box(cv2.getRotationMatrix2D(
-            (0, 0), -roll, 1.0).dot(corners.T).T, (0, 0, 0, 0), exclude_chin_points)
+        top_left, bottom_right = get_face_box(cv2.getRotationMatrix2D((0, 0), -roll, 1.0).dot(corners.T).T,
+                                              (0, 0, 0, 0), exclude_chin_points, margin_dim, crop_square)
         top_left -= 5
         bottom_right += 5
 
@@ -184,7 +189,7 @@ def extract_face_image(image, landmarks, target_size, margin, head_pose=None,
         landmarks = rotation_matrix.dot(np.vstack((landmarks.T, np.ones(landmarks.shape[0])))).T
         if eye_points is not None:
             eye_points = rotation_matrix.dot(np.vstack((eye_points.T, np.ones(eye_points.shape[0])))).T
-        top_left, bottom_right = get_face_box(landmarks, margin, exclude_chin_points)
+        top_left, bottom_right = get_face_box(landmarks, margin, exclude_chin_points, margin_dim, crop_square)
         if top_left[0] > 0:
             landmarks[:, 0] -= top_left[0]
             if eye_points is not None:
