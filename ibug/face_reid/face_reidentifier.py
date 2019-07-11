@@ -1,3 +1,4 @@
+import os
 import warnings
 from .misc import *
 import scipy.spatial.distance as sd
@@ -6,11 +7,14 @@ from scipy.optimize import linear_sum_assignment
 
 
 class FaceReidentifier(object):
-    def __init__(self, model_path="", distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
+    def __init__(self, model_path=os.path.realpath(os.path.join(os.path.dirname(__file__), 'models',
+                                                                'vggface16_pytorch_weights.pt')),
+                 distance_threshold=1.0, neighbour_count_threshold=4, quality_threshold=1.0,
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
-                 mean_rgb=(129.1863, 104.7624, 93.5940), distance_metric='euclidean',
-                 face_image_size=224, normalise_face_descriptor=True, model=None, gpu=None):
-        if len(model_path) > 0:
+                 mean_rgb=(129.1863, 104.7624, 93.5940), std_rgb=(1.0, 1.0, 1.0),
+                 distance_metric='euclidean', face_image_size=224, normalise_face_descriptor=True,
+                 model_rgb_channel_order=True, model=None, gpu=None):
+        if model is None and model_path is not None and len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
         try:
@@ -30,10 +34,17 @@ class FaceReidentifier(object):
                 self._device = torch.device('cpu')
                 self._model = model.to(self._device)
         self._model.eval()
-        if face_image_size > 0:
+        if isinstance(face_image_size, tuple) or isinstance(face_image_size, list):
+            face_image_width = int(face_image_size[0])
+            face_image_height = int(face_image_size[1])
+        else:
+            face_image_width = face_image_height = int(face_image_size)
+        if face_image_width > 0 and face_image_height > 0:
             try:
-                self._model = torch.jit.trace(self._model, torch.rand(1, 3, max(1, int(face_image_size)),
-                                                                      max(1, int(face_image_size))).to(self._device))
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    self._model = torch.jit.trace(self._model, torch.rand(1, 3, face_image_height,
+                                                                          face_image_width).to(self._device))
             except:
                 pass
         self._distance_threshold = max(0.0, distance_threshold)
@@ -44,8 +55,11 @@ class FaceReidentifier(object):
         self._descriptor_update_rate = max(0.0, min(descriptor_update_rate, 1.0))
         assert len(mean_rgb) == 3
         self._mean_rgb = mean_rgb
+        assert len(std_rgb) == 3
+        self._std_rgb = std_rgb
         self._distance_metric = distance_metric
-        self._normalise_face_descriptor = normalise_face_descriptor
+        self._normalise_face_descriptor = bool(normalise_face_descriptor)
+        self._model_rgb_channel_order = bool(model_rgb_channel_order)
         self._database = OrderedDict()
         self._unidentified_tracklets = OrderedDict()
         self._exisiting_tracklet_ids = set()
@@ -121,6 +135,15 @@ class FaceReidentifier(object):
         self._mean_rgb = value
 
     @property
+    def std_rgb(self):
+        return self._std_rgb
+
+    @std_rgb.setter
+    def std_rgb(self, value):
+        assert len(value) == 3
+        self._std_rgb = value
+
+    @property
     def distance_metric(self):
         return self._distance_metric
 
@@ -135,6 +158,14 @@ class FaceReidentifier(object):
     @normalise_face_descriptor.setter
     def normalise_face_descriptor(self, value):
         self._normalise_face_descriptor = bool(value)
+
+    @property
+    def model_rgb_channel_order(self):
+        return self._model_rgb_channel_order
+
+    @model_rgb_channel_order.setter
+    def model_rgb_channel_order(self, value):
+        self._model_rgb_channel_order = bool(value)
 
     @property
     def gpu(self):
@@ -183,14 +214,17 @@ class FaceReidentifier(object):
         face_images = np.array(face_images).astype(np.float32)
         for face_image in face_images:
             if use_bgr_colour_model:
-                face_image[..., 2] -= self._mean_rgb[0]
-                face_image[..., 1] -= self._mean_rgb[1]
-                face_image[..., 0] -= self._mean_rgb[2]
-                face_image[...] = face_image[..., ::-1]
+                face_image[..., 2] = (face_image[..., 2] - self._mean_rgb[0]) / self._std_rgb[0]
+                face_image[..., 1] = (face_image[..., 1] - self._mean_rgb[1]) / self._std_rgb[1]
+                face_image[..., 0] = (face_image[..., 0] - self._mean_rgb[2]) / self._std_rgb[2]
+                if self._model_rgb_channel_order:
+                    face_image[...] = face_image[..., ::-1]
             else:
-                face_image[..., 0] -= self._mean_rgb[0]
-                face_image[..., 1] -= self._mean_rgb[1]
-                face_image[..., 2] -= self._mean_rgb[2]
+                face_image[..., 0] = (face_image[..., 0] - self._mean_rgb[0]) / self._std_rgb[0]
+                face_image[..., 1] = (face_image[..., 1] - self._mean_rgb[1]) / self._std_rgb[1]
+                face_image[..., 2] = (face_image[..., 2] - self._mean_rgb[2]) / self._std_rgb[2]
+                if not self._model_rgb_channel_order:
+                    face_image[...] = face_image[..., ::-1]
         face_images = torch.from_numpy(face_images.transpose([0, 3, 1, 2]))
         if self._device.type == 'cpu':
             face_descriptors = self._model(face_images).detach().numpy()
@@ -290,7 +324,7 @@ class FaceReidentifier(object):
                     saved_face_descriptors += self._database[saved_face_id]['descriptors']
                     saved_face_id_list += [saved_face_id] * len(self._database[saved_face_id]['descriptors'])
                 distances = sd.cdist(remaining_face_descriptors, saved_face_descriptors, metric=self.distance_metric)
-                max_distance = np.amax(distances)
+                pseudo_max_distance = max(np.amax(distances), 1.0)
 
                 # Now compute similarities between new descriptors and existing identities
                 similarities = -np.ones((len(remaining_face_descriptors), len(saved_face_ids)), dtype=np.float)
@@ -303,7 +337,7 @@ class FaceReidentifier(object):
                             saved_face_id = neighbour_face_ids[idx2]
                             saved_face_idx = saved_face_ids.index(saved_face_id)
                             similarities[idx, saved_face_idx] = \
-                                (counts[idx2] * 2 + 1) * max_distance - np.min(
+                                (counts[idx2] * 2 + 1) * pseudo_max_distance - np.min(
                                     [distances[idx, x2] for x2 in [x for x in neighbours if
                                                                    saved_face_id_list[x] == saved_face_id]])
 
@@ -324,8 +358,9 @@ class FaceReidentifier(object):
                                      saved_tracklets[conflict[0]]] = -1.0
 
                 # Assign descriptors to existing identities
-                similarities[similarities < 0.0] *= (similarities.shape[0] * similarities.shape[1] *
-                                                     np.amax(similarities)) ** 2
+                max_similarity = np.amax(similarities)
+                if max_similarity >= 0.0:
+                    similarities[similarities < 0.0] *= (2.0 * max_similarity + 1.0) * min(similarities.shape)
                 rows, cols = linear_sum_assignment(-similarities)
                 associations = []
                 for [idx1, idx2] in np.vstack((rows, cols)).T:
@@ -363,7 +398,8 @@ class FaceReidentifier(object):
 class FaceReidentifierEx(FaceReidentifier):
     def __init__(self, reidentification_interval=8, minimum_tracklet_length=6,
                  minimum_face_size=0.0, face_margin=(0.225, 0.225, 0.225, 0.225),
-                 exclude_chin_points=True, equalise_histogram=True,
+                 exclude_chin_points=True, margin_dim=0, crop_square=True,
+                 interpolation=cv2.INTER_LINEAR, equalise_histogram=True,
                  normalised_face_size=224, *args, **kwargs):
         super(FaceReidentifierEx, self).__init__(face_image_size=normalised_face_size, *args, **kwargs)
         self._reidentification_interval = max(1, int(reidentification_interval))
@@ -372,8 +408,16 @@ class FaceReidentifierEx(FaceReidentifier):
         assert len(face_margin) == 4
         self._face_margin = face_margin
         self._exclude_chin_points = bool(exclude_chin_points)
+        self._margin_dim = margin_dim
+        self._crop_square = bool(crop_square)
+        self._interpolation = interpolation
         self._equalise_histogram = bool(equalise_histogram)
-        self._normalised_face_size = max(1, int(normalised_face_size))
+        if isinstance(normalised_face_size, tuple):
+            self._normalised_face_size = tuple([int(x) for x in normalised_face_size])
+        elif isinstance(normalised_face_size, list):
+            self._normalised_face_size = [int(x) for x in normalised_face_size]
+        else:
+            self._normalised_face_size = int(normalised_face_size)
         self._tracking_context = {}
         self._reidentification_countdown = self._reidentification_interval
 
@@ -419,6 +463,30 @@ class FaceReidentifierEx(FaceReidentifier):
         self._exclude_chin_points = bool(value)
 
     @property
+    def margin_dim(self):
+        return self._margin_dim
+
+    @margin_dim.setter
+    def margin_dim(self, value):
+        self._margin_dim = value
+
+    @property
+    def crop_square(self):
+        return self._crop_square
+
+    @crop_square.setter
+    def crop_square(self, value):
+        self._crop_square = bool(value)
+
+    @property
+    def interpolation(self):
+        return self._interpolation
+
+    @interpolation.setter
+    def interpolation(self, value):
+        self._interpolation = value
+
+    @property
     def equalise_histogram(self):
         return self._equalise_histogram
 
@@ -432,7 +500,12 @@ class FaceReidentifierEx(FaceReidentifier):
 
     @normalised_face_size.setter
     def normalised_face_size(self, value):
-        self._normalised_face_size = max(1, int(value))
+        if isinstance(value, tuple):
+            self._normalised_face_size = tuple([int(x) for x in value])
+        elif isinstance(value, list):
+            self._normalised_face_size = [int(x) for x in value]
+        else:
+            self._normalised_face_size = int(value)
 
     def reidentify_tracked_faces(self, frame, tracked_faces, force_reidentification=False,
                                  ignore_minimum_tracklet_length=False, ignore_quality=False,
@@ -491,23 +564,32 @@ class FaceReidentifierEx(FaceReidentifier):
         if force_reidentification or self._reidentification_countdown <= 0:
             self._reidentification_countdown = self._reidentification_interval
             tracklets_to_be_identified = []
+            if isinstance(self._normalised_face_size, tuple) or isinstance(self._normalised_face_size, list):
+                normalised_image_width = int(self._normalised_face_size[0])
+                normalised_image_height = int(self._normalised_face_size[1])
+            else:
+                normalised_image_width = normalised_image_height = int(self._normalised_face_size)
             for tracklet_id in self._tracking_context.keys():
                 if (ignore_minimum_tracklet_length or
                         self._tracking_context[tracklet_id]['tracklet_length'] >=
                         self._minimum_tracklet_length):
                     face_image = self._tracking_context[tracklet_id]['face_image']
                     if face_image is not None:
-                        if (face_image.shape[0] != self._normalised_face_size or
-                                face_image.shape[1] != self._normalised_face_size):
-                            face_image = cv2.resize(face_image, (self._normalised_face_size,
-                                                                 self._normalised_face_size))
+                        if (normalised_image_width > 0 and normalised_image_height > 0 and
+                                (face_image.shape[1] != normalised_image_width or
+                                 face_image.shape[0] != normalised_image_height)):
+                            face_image = cv2.resize(face_image, (normalised_image_width,
+                                                                 normalised_image_height))
                     elif frame is not None and self._tracking_context[tracklet_id]['facial_landmarks'] is not None:
                         face_image = extract_face_image(frame,
                                                         self._tracking_context[tracklet_id]['facial_landmarks'],
-                                                        (self._normalised_face_size, self._normalised_face_size),
+                                                        (normalised_image_width, normalised_image_height),
                                                         self._face_margin,
                                                         self._tracking_context[tracklet_id]['head_pose'],
-                                                        exclude_chin_points=self._exclude_chin_points)[0]
+                                                        exclude_chin_points=self._exclude_chin_points,
+                                                        margin_dim=self._margin_dim,
+                                                        crop_square=self._crop_square,
+                                                        interpolation=self._interpolation)[0]
                     if face_image is not None:
                         if self._equalise_histogram:
                             self._tracking_context[tracklet_id]['face_image'] = equalise_histogram(

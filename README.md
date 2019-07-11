@@ -7,13 +7,12 @@ A multi-face tracker that assigns each person an unique ID that is consistent th
 * [PyTorch](https://pytorch.org/) (`conda install pytorch torchvision -c pytorch`) with [CUDA](https://developer.nvidia.com/cuda-90-download-archive) and [cuDNN](https://developer.nvidia.com/cudnn) (though ***you don't need to manually install the latter two***). The code has been developed for ***Python 3.5*** on a ***Ubuntu*** machine with ***PyTorch 1.0.1*** and ***CUDA 9.0***. However, it will also works in Python 2.7, on a Windows (7/8/10) machine, and / or with other (newer) versions of the aforementioned libraries as long as they are compatible with each other.
 * [OpenCV](https://opencv.org/) (`pip install opencv-python`), [numpy](http://www.numpy.org/) (`pip install numpy`), and [scipy](https://www.scipy.org/) (`pip install scipy`).
 * [A multi-face landmark tracker](https://github.com/IntelligentBehaviourUnderstandingGroup/face_tracking). I used this [dlib](http://dlib.net/)-and-[chehra](https://ibug.doc.ic.ac.uk/resources/chehra-tracker-cvpr-2014/)-based tracker because it is very light weight (comparing to those based on deep-methods) while is still accurate enough for our application scenario, since our method does not require the coordinates of individual landmarks, only the faces' bounding box. Nonetheless, feel free to use a better tracker, such as [FAN](https://github.com/1adrianb/2D-and-3D-face-alignment) if you also need the landmarks for other purposes.
-* Last but not least, don't forget to ***[download the model file](https://drive.google.com/open?id=1sLtsfu_Ry_l_3iN6goRtI3Jd_E-bhoVB)*** and save it in the [models folder](./models).
+* Last but not least, don't forget to ***[download the model file](https://drive.google.com/open?id=1sLtsfu_Ry_l_3iN6goRtI3Jd_E-bhoVB)*** and save it in the [model folder](./ibug/face_reid/models).
 
 ## How to Run the Demo
 Just run `python face_reidentifier_test.py 0` from your terminal, in which 0 means you are to use the first (#0) webcam connected to your machine. Other parameters are configured by [face_reidentifier_test.ini](./face_reidentifier_test.ini). Although this file contains many parameters, most should be kept to their default value. Nonetheless, the following entries can / should be tuned to suit your need:
 * `cv2.VideoCapture/*`: Dimension of the images captured from the webcam.
 * `ibug.face_tracking.MultiFaceTracker/*`: Parameters controlling the [multi-face landmark tracker](https://github.com/IntelligentBehaviourUnderstandingGroup/face_tracking). Specifically, the following may need to be changed:
-    - `ibug.face_tracking.MultiFaceTracker/ert_model_path` and `ibug.face_tracking.MultiFaceTracker/auxiliary_model_path`: Path of the model files.
     - `ibug.face_tracking.MultiFaceTracker/faces_to_track`: The maximum number of faces to track at any given time.
     - `ibug.face_tracking.MultiFaceTracker/minimum_face_size`: To avoid false positives, faces smaller than this will be ignored.
 * `ibug.face_reid.FaceReidentifierEx/*`: Parameters controlling the face re-ID module, in which the following may be tuned:
@@ -23,7 +22,7 @@ Just run `python face_reidentifier_test.py 0` from your terminal, in which 0 mea
     - `ibug.face_reid.FaceReidentifierEx/minimum_tracklet_length`: Face reidentification will only be performed on faces that have been continuously tracked for at least this number of frames. This is inline with the ghost elimination approach described in [\[1\]](https://ibug.doc.ic.ac.uk/media/uploads/documents/a_real-time_and_unsupervised_face_re-identification_system_for_human-robot_interaction.pdf).
 
 ## How to Install the Python Package
-* To install: `python setup.py install`
+* To install: `pip install -e .`
 * To uninstall: `pip uninstall ibug_face_reid`
 
 ## How to Use the Python Package
@@ -36,14 +35,11 @@ from ibug.face_tracking import *
 from ibug.face_reid import FaceReidentifierEx
 
 # Create the facial landmark tracker (to track at most 6 faces)
-ert_model_path = '../face_tracking/models/new3_49_pts_UAD_1_tr_6_cas_15.dat'
-aux_model_path = '../face_tracking/models/additional_svrs.model'
-tracker = MultiFaceTracker(ert_model_path, aux_model_path, faces_to_track=6)
+tracker = MultiFaceTracker(faces_to_track=6)
 # You may wish to tune the tracker's parameters here.
 
 # Create the face reidentifier, using GPU #0
-reidentifier = FaceReidentifierEx(model_path='./models/vggface16_pytorch_weights.pt',
-                                  gpu=0)
+reidentifier = FaceReidentifierEx(gpu=0)
 # You may wish to tune the reidentifier's parameters here.
 
 # Open the webcam

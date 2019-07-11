@@ -1,6 +1,5 @@
 import os
 import sys
-import glob
 import shutil
 from setuptools import setup
 
@@ -9,14 +8,10 @@ def clean_repo():
     repo_folder = os.path.realpath(os.path.dirname(__file__))
     dist_folder = os.path.join(repo_folder, 'dist')
     build_folder = os.path.join(repo_folder, 'build')
-    egginfo_folders = glob.glob(os.path.join(repo_folder, '*.egg-info'))
     if os.path.isdir(dist_folder):
         shutil.rmtree(dist_folder, ignore_errors=True)
     if os.path.isdir(build_folder):
         shutil.rmtree(build_folder, ignore_errors=True)
-    for egginfo_folder in egginfo_folders:
-        if os.path.isdir(egginfo_folder):
-            shutil.rmtree(egginfo_folder, ignore_errors=True)
 
 
 # Read version string
