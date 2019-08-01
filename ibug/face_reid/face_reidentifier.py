@@ -13,7 +13,7 @@ class FaceReidentifier(object):
                  database_capacity=16, descriptor_list_capacity=16, descriptor_update_rate=0.1,
                  mean_rgb=(129.1863, 104.7624, 93.5940), std_rgb=(1.0, 1.0, 1.0),
                  distance_metric='euclidean', face_image_size=224, normalise_face_descriptor=True,
-                 model_rgb_channel_order=True, model=None, gpu=None):
+                 model_rgb_channel_order=True, model=None, gpu=None, quality_checker=None):
         if model is None and model_path is not None and len(model_path) > 0:
             model = load_vgg_face_16_feature_extractor(model_path)
         self._model = None
@@ -60,6 +60,7 @@ class FaceReidentifier(object):
         self._distance_metric = distance_metric
         self._normalise_face_descriptor = bool(normalise_face_descriptor)
         self._model_rgb_channel_order = bool(model_rgb_channel_order)
+        self._quality_checker = quality_checker
         self._database = OrderedDict()
         self._unidentified_tracklets = OrderedDict()
         self._exisiting_tracklet_ids = set()
@@ -171,6 +172,14 @@ class FaceReidentifier(object):
     def gpu(self):
         return self._gpu
 
+    @property
+    def quality_checker(self):
+        return self._quality_checker
+
+    @quality_checker.setter
+    def quality_checker(self, value):
+        self._quality_checker = value
+
     def reset(self, reset_face_id_counter=True):
         self._database.clear()
         self._unidentified_tracklets.clear()
@@ -227,13 +236,21 @@ class FaceReidentifier(object):
                     face_image[...] = face_image[..., ::-1]
         face_images = torch.from_numpy(face_images.transpose([0, 3, 1, 2]))
         if self._device.type == 'cpu':
-            face_descriptors = self._model(face_images).detach().numpy()
+            raw_model_output = self._model(face_images)
+            if isinstance(raw_model_output, tuple):
+                face_descriptors = raw_model_output[0].detach().numpy()
+            else:
+                face_descriptors = raw_model_output.detach().numpy()
         else:
-            face_descriptors = self._model(face_images.to(self._device)).detach().cpu().numpy()
+            raw_model_output = self._model(face_images.to(self._device))
+            if isinstance(raw_model_output, tuple):
+                face_descriptors = raw_model_output[0].detach().cpu().numpy()
+            else:
+                face_descriptors = raw_model_output.detach().cpu().numpy()
         if self._normalise_face_descriptor:
             for face_descriptor in face_descriptors:
                 face_descriptor /= max(np.finfo(np.float).eps, np.linalg.norm(face_descriptor))
-        return list(face_descriptors)
+        return list(face_descriptors), raw_model_output
 
     def _update_identity(self, identity, face_descriptors, tracklet_id):
         for face_descriptor in face_descriptors:
@@ -272,7 +289,13 @@ class FaceReidentifier(object):
             assert len(self._exisiting_tracklet_ids) == number_of_faces
 
             # Calculate face descriptors
-            face_descriptors = self._compute_face_descriptors(face_images, use_bgr_colour_model)
+            face_descriptors, raw_model_output = self._compute_face_descriptors(face_images, use_bgr_colour_model)
+
+            # Quality check
+            if self._quality_checker is not None:
+                for idx, verdict in enumerate(self._quality_checker(raw_model_output)):
+                    if not verdict:
+                        qualities[idx] = self._quality_threshold - abs(self._quality_threshold) * 2 - 1
 
             # Update conflict list
             sorted_unique_tracklet_ids = sorted(list(self._exisiting_tracklet_ids))
