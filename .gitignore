@@ -4,3 +4,4 @@ ibug/face_reid/models/*.pt
 build
 dist
 *.egg-info
+.DS_Store
