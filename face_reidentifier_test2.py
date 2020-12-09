@@ -2,7 +2,6 @@ import os
 import cv2
 import dlib
 import time
-import imageio
 import numpy as np
 from argparse import ArgumentParser
 from configparser import ConfigParser
@@ -24,6 +23,7 @@ def main():
     config.read(args.config)
 
     vid = None
+    out_vid = None
     try:
         # Create dlib face detector (should be replaced by RetinaFace)
         face_detector = dlib.get_frontal_face_detector()
@@ -45,6 +45,11 @@ def main():
                                                     fallback=tracker.minimum_face_size)
         print('Naive face tracker created.')
 
+        # Create the head pose estimator
+        # Note: The head pose estimation algorithm needs to done differently when RetinaFace is used.
+        head_pose_estimator = HeadPoseEstimator()
+        print('Head pose estimator created.')
+
         # Create the face reidentifier
         # Note: All the parameters specified here are tightly linked to the embedding being used
         reidentifier_section_name = 'ibug.face_reid.FaceReidentifierEx'
@@ -63,8 +68,6 @@ def main():
         reidentifier.neighbour_count_threshold = config.getint(reidentifier_section_name,
                                                                'neighbour_count_threshold',
                                                                fallback=reidentifier.neighbour_count_threshold)
-        reidentifier.quality_threshold = config.getfloat(reidentifier_section_name, 'quality_threshold',
-                                                         fallback=reidentifier.quality_threshold)
         reidentifier.database_capacity = config.getint(reidentifier_section_name, 'database_capacity',
                                                        fallback=reidentifier.database_capacity)
         reidentifier.descriptor_list_capacity = config.getint(reidentifier_section_name, 'descriptor_list_capacity',
@@ -90,13 +93,20 @@ def main():
         else:
             print(f'Input video "{args.input}" opened.')
 
+        # Open the output video (if a path is given)
+        if args.output is not None:
+            out_vid = cv2.VideoWriter(args.output, apiPreference=cv2.CAP_FFMPEG, fps=vid.get(cv2.CAP_PROP_FPS),
+                                      frameSize=(int(vid.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                                                 int(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))),
+                                      fourcc=cv2.VideoWriter_fourcc('m', 'p', '4', 'v'))
+
         # Process the frames
         frame_number = 0
         window_title = os.path.splitext(os.path.basename(__file__))[0]
         colours = [(0, 0, 255), (0, 255, 0), (255, 0, 0), (0, 255, 255), (255, 0, 255), (255, 255, 0),
                    (0, 128, 255), (128, 255, 0), (255, 0, 128), (128, 0, 255), (0, 255, 128), (255, 128, 0)]
         unidentified_face_colours = [(128, 128, 128), (192, 192, 192)]
-        print('Processing started, press \'Q\' to quit.')
+        print('Processing started, press \'Q\' to quit or \'R\' to reset.')
         while True:
             # Get a new frame
             _, frame = vid.read()
@@ -125,11 +135,21 @@ def main():
                 #       are usually not rotational-invariant, compensating for in-plane rotation could increase the
                 #       model's accuracy. 2) To estimate 'pitch' and 'yaw' (out-of-plane rotations) of the faces so
                 #       that those that are 'too non-frontal' will not be used by the face recognition model. This will
-                #       decrease the number of false positives given by the re-id algorithm. Here we only perform roll
-                #       estimation. Pitch and yaw estimation needs to be worked on later for the 5 landmarks given by
-                #       RetinaFace.
+                #       decrease the number of false positives given by the re-id algorithm.
                 for face in tracked_faces:
-                    pass
+                    pitch, yaw, roll = head_pose_estimator.estimate_head_pose(face['facial_landmarks'])
+                    face['pitch'], face['yaw'], face['roll'] = pitch, yaw, roll
+
+                # Set quality for each face
+                # Note: The face-reid algorithm will not try to extract feature vector from a face if it's quality is
+                #       below a certain threshold. Many things can be used as the quality measure. Here we just use
+                #       pitch and yaw, but when RetinaFace is used, the detection confidence (of both the bbox and the
+                #       key points) could also be added into the mixture.
+                for face in tracked_faces:
+                    if -30.0 <= face['pitch'] <= 30.0 and -40.0 <= face['yaw'] <= 40.0:
+                        face['quality'] = reidentifier.quality_threshold + 1.0
+                    else:
+                        face['quality'] = reidentifier.quality_threshold - 1.0
 
                 # Face re-id
                 # Note: The re-id algorithm will give a 'face_id' to each face. A value of 0 means the face has not
@@ -138,6 +158,7 @@ def main():
                 identities = reidentifier.reidentify_tracked_faces(frame, tracked_faces)
                 elapsed_time = time.time() - start_time
 
+                # Textural output
                 valid_face_ids = [identities[x]['face_id'] for x in identities.keys() if
                                   identities[x]['face_id'] > 0]
                 if len(valid_face_ids) == 0:
@@ -173,6 +194,10 @@ def main():
                         plot_landmarks(frame, face['facial_landmarks'], unidentified_face_colours[1],
                                        unidentified_face_colours[0])
 
+                # Write the frame to output video (if recording)
+                if out_vid is not None:
+                    out_vid.write(frame)
+
                 # Display the frame
                 cv2.imshow(window_title, frame)
                 key = cv2.waitKey(1) % 2 ** 16
@@ -181,7 +206,13 @@ def main():
                     break
                 else:
                     frame_number += 1
+                    if key == ord('r') or key == ord('R'):
+                        print('\'R\' pressed, reset everything.')
+                        reidentifier.reset()
+                        tracker.reset()
     finally:
+        if out_vid is not None:
+            out_vid.release()
         if vid is not None:
             vid.release()
         print('All done.')
