@@ -122,6 +122,7 @@ def main():
                 #       to the face recognition model to get the face descriptor. When using RetinaFace, we should use
                 #       the 5 key points returned by the model. These landmarks don't need to be very accurate. But if
                 #       RetinaFace's 5 key points are too far off, we can just put the 4 corners of the face bbox here.
+                start_time = time.time()
                 faces = detect_faces_and_key_points(face_detector, landmarker,
                                                     cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
 
@@ -157,7 +158,6 @@ def main():
                 # Face re-id
                 # Note: The re-id algorithm will give a 'face_id' to each face. A value of 0 means the face has not
                 #       been identified (yet).
-                start_time = time.time()
                 identities = reidentifier.reidentify_tracked_faces(frame, tracked_faces)
                 elapsed_time = time.time() - start_time
 
