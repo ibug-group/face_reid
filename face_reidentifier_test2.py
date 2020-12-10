@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--output', '-o', help='Output file path', default=None)
     parser.add_argument('--config', '-c', help='Config file path',
                         default=os.path.splitext(os.path.realpath(__file__))[0] + '.ini')
+    parser.add_argument('--no-display', '-n', help='No display if processing a video file.',
+                        action='store_true', default=False)
     args = parser.parse_args()
 
     # Parse config
@@ -24,6 +26,7 @@ def main():
 
     vid = None
     out_vid = None
+    has_window = False
     try:
         # Create dlib face detector (should be replaced by RetinaFace)
         face_detector = dlib.get_frontal_face_detector()
@@ -199,18 +202,22 @@ def main():
                     out_vid.write(frame)
 
                 # Display the frame
-                cv2.imshow(window_title, frame)
-                key = cv2.waitKey(1) % 2 ** 16
-                if key == ord('q') or key == ord('Q'):
-                    print('\'Q\' pressed, we are done here.')
-                    break
-                else:
-                    frame_number += 1
-                    if key == ord('r') or key == ord('R'):
-                        print('\'R\' pressed, reset everything.')
-                        reidentifier.reset()
-                        tracker.reset()
+                if using_webcam or not args.no_display:
+                    has_window = True
+                    cv2.imshow(window_title, frame)
+                    key = cv2.waitKey(1) % 2 ** 16
+                    if key == ord('q') or key == ord('Q'):
+                        print('\'Q\' pressed, we are done here.')
+                        break
+                    else:
+                        if key == ord('r') or key == ord('R'):
+                            print('\'R\' pressed, reset everything.')
+                            reidentifier.reset()
+                            tracker.reset()
+                frame_number += 1
     finally:
+        if has_window:
+            cv2.destroyAllWindows()
         if out_vid is not None:
             out_vid.release()
         if vid is not None:
