@@ -16,8 +16,13 @@ def main():
     parser.add_argument('--output', '-o', help='Output file path', default=None)
     parser.add_argument('--config', '-c', help='Config file path',
                         default=os.path.splitext(os.path.realpath(__file__))[0] + '.ini')
-    parser.add_argument('--no-display', '-n', help='No display if processing a video file.',
+    parser.add_argument('--no-display', '-n', help='No display if processing a video file',
                         action='store_true', default=False)
+    parser.add_argument('--use-retina-face-landmarks', '-r',
+                        help='Use RetinaFace landmarks for face patch cropping and pose estimation',
+                        action='store_true', default=False)
+    parser.add_argument('--pitch-range', '-p', help='Pitch range in degrees', type=float, default=30.0)
+    parser.add_argument('--yaw-range', '-y', help='Yaw range in degrees', type=float, default=35.0)
     args = parser.parse_args()
 
     # Parse config
@@ -49,8 +54,11 @@ def main():
         print('Naive face tracker created.')
 
         # Create the head pose estimator
-        # Note: The head pose estimation algorithm needs to done differently when RetinaFace is used.
-        head_pose_estimator = HeadPoseEstimator()
+        # Note: Different algorithms are used depending on whether we use RetinaFace's 5 key points
+        if args.use_retina_face_landmarks:
+            head_pose_estimator = RetinaFacePoseEstimator()
+        else:
+            head_pose_estimator = HeadPoseEstimator()
         print('Head pose estimator created.')
 
         # Create the face reidentifier
@@ -60,10 +68,15 @@ def main():
                                           std_rgb=(1.0, 1.0, 1.0), normalised_face_size=224, equalise_histogram=True,
                                           gpu=eval(config.get(reidentifier_section_name, 'gpu', fallback='None')))
 
-        # Note: These parameters should be changed once we switch to RetinaFae, specifically:
-        reidentifier.margin_dim = 0
-        reidentifier.face_margin = (0.225, 0.225, 0.225, 0.225)
-        reidentifier.exclude_chin_points = True
+        # Note: These parameters are set to different values depending on whether we use RetinaFace's 5 key points
+        if args.use_retina_face_landmarks:
+            reidentifier.margin_dim = 0
+            reidentifier.face_margin = (0.65, 0.65, 0.65, 0.65)
+            reidentifier.exclude_chin_points = False
+        else:
+            reidentifier.margin_dim = 0
+            reidentifier.face_margin = (0.225, 0.225, 0.225, 0.225)
+            reidentifier.exclude_chin_points = True
 
         # Note: These are the main parameters controlling the behaviour of the re-id algorithm
         reidentifier.distance_threshold = config.getfloat(reidentifier_section_name, 'distance_threshold',
@@ -124,7 +137,8 @@ def main():
                 #       RetinaFace's 5 key points are too far off, we can just put the 4 corners of the face bbox here.
                 start_time = time.time()
                 faces = detect_faces_and_key_points(face_detector, landmarker,
-                                                    cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                                                    cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
+                                                    args.use_retina_face_landmarks)
 
                 # Face tracking
                 # Note: The tracker will give an 'id' (referred to as tracklet id) to each tracked face. This field is
@@ -141,7 +155,11 @@ def main():
                 #       that those that are 'too non-frontal' will not be used by the face recognition model. This will
                 #       decrease the number of false positives given by the re-id algorithm.
                 for face in tracked_faces:
-                    pitch, yaw, roll = head_pose_estimator.estimate_head_pose(face['facial_landmarks'])
+                    if args.use_retina_face_landmarks:
+                        pitch, yaw, roll = head_pose_estimator.estimate_head_pose(face['facial_landmarks'],
+                                                                                  frame.shape[1], frame.shape[0])
+                    else:
+                        pitch, yaw, roll = head_pose_estimator.estimate_head_pose(face['facial_landmarks'])
                     face['pitch'], face['yaw'], face['roll'] = pitch, yaw, roll
 
                 # Set quality for each face
@@ -150,7 +168,8 @@ def main():
                 #       pitch and yaw, but when RetinaFace is used, the detection confidence (of both the bbox and the
                 #       key points) could also be added into the mixture.
                 for face in tracked_faces:
-                    if -30.0 <= face['pitch'] <= 30.0 and -40.0 <= face['yaw'] <= 40.0:
+                    if (-abs(args.pitch_range) <= face['pitch'] <= abs(args.pitch_range) and
+                            -abs(args.yaw_range) <= face['yaw'] <= abs(args.yaw_range)):
                         face['quality'] = reidentifier.quality_threshold + 1.0
                     else:
                         face['quality'] = reidentifier.quality_threshold - 1.0
