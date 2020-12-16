@@ -35,5 +35,6 @@ class RetinaFacePoseEstimator(object):
             landmarks = np.vstack((left_eye, right_eye, landmarks[[13, 31, 37]]))
 
         # EPnP
-        _, rotation, _ = cv2.solvePnP(self._retina_mean_shape, landmarks, camera_matrix, None, flags=cv2.SOLVEPNP_EPNP)
+        _, rotation, _ = cv2.solvePnP(self._retina_mean_shape, np.expand_dims(landmarks, axis=1),
+                                      camera_matrix, None, flags=cv2.SOLVEPNP_EPNP)
         return tuple((rotation[:, 0] * [-1, 1, 1] / np.pi * 180.0).tolist())
