@@ -2,6 +2,7 @@ import os
 import cv2
 import dlib
 import time
+import torch
 import numpy as np
 from argparse import ArgumentParser
 from configparser import ConfigParser
@@ -24,6 +25,9 @@ def main():
     parser.add_argument('--pitch-range', '-p', help='Pitch range in degrees', type=float, default=30.0)
     parser.add_argument('--yaw-range', '-y', help='Yaw range in degrees', type=float, default=35.0)
     args = parser.parse_args()
+
+    # Make the models run a bit faster
+    torch.backends.cudnn.benchmark = True
 
     # Parse config
     config = ConfigParser()
