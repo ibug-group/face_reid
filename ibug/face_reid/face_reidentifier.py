@@ -450,7 +450,9 @@ class FaceReidentifierEx(FaceReidentifier):
 
     @reidentification_interval.setter
     def reidentification_interval(self, value):
-        self._reidentification_interval = max(1, int(value))
+        value = max(1, int(value))
+        self._reidentification_countdown -= (self._reidentification_interval - value)
+        self._reidentification_interval = value
 
     @property
     def minimum_tracklet_length(self):
